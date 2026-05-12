@@ -1,56 +1,42 @@
 #!/bin/bash
 
-if [ "$#" -lt "1" ]; then
-    echo "Usage:   run_mce_raw_acq_all <ndatasets> [ <columns> <rcs> <nsamples> ]"
-    echo
-    echo "  ndatasets      number of datasets to acquire"
-    echo "  columns        comma delimited list of columns to acquire data on (default is 0-7)"
-    echo "  rcs            comma delimited list of RCs to acquire data on (default is 1,2)"
-    echo "  nsamples       number of 50 MHz samples to take (default is 65536)"
-    exit 1
-fi
-
-
-# [$1==ndatasets]
-# [$2==0, 1,2,3 ; columns to take data on - optional, otherwise set default_columns internally]
-# [$3==1, 2,3 ; RCs to take data on - optional, otherwise set default_rcs internally]
 # 20260116 copied from b3tower3:/home/bicep3/shawn/mce_scripts/go_raw_all.sh
 
+SCRIPT_NAME=$(basename "$0")
 
+ndatasets=1
+columns=(0 1 2 3 4 5 6 7)
+rcs=(1 2)
+# columns=(0 1)
+# rcs=(1)
+nsamples=""
 
-CTIME_FOR_LOGFILE=`date +%s`
+opts=$(getopt -o n:c:R:s: \
+    --long ndatasets:,col:,rcs:,nsamples: \
+    -n "$SCRIPT_NAME" -- "$@")
+if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
+eval set -- "$opts"
+
+while true; do
+    case "$1" in
+        -n|--ndatasets) ndatasets="$2"; shift 2 ;;
+        -c|--col)       IFS=',' read -r -a columns <<< "$2"; shift 2 ;;
+        -R|--rcs)       IFS=',' read -r -a rcs     <<< "$2"; shift 2 ;;
+        -s|--nsamples)  nsamples="$2"; shift 2 ;;
+        --)             shift; break ;;
+        *)              echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+CTIME_FOR_LOGFILE=$(date +%s)
 dirname=raw_${CTIME_FOR_LOGFILE}
-mkdir -p $MAS_DATA/$dirname
+mkdir -p "$MAS_DATA/$dirname"
 
 LOGFILE=$MAS_DATA/$dirname/log.txt
 echo "OUTFILE=${LOGFILE}"
 
-ndatasets=$1
-
-# defaults
-default_columns=(0 4)
-default_rcs=(1)
-
-# did user specify columns? comma delimited...
-if [ -n "$2" ] 
-then 
-    IFS=', ' read -r -a columns <<< "$2"
-else
-    columns=("${default_columns[@]}")
-fi
-
-# did user specify rcs? comma delimited...
-if [ -n "$3" ] 
-then 
-    IFS=', ' read -r -a rcs <<< "$3"
-else
-    rcs=("${default_rcs[@]}")
-fi
-
 echo "columns=(${columns[@]})"
 echo "rcs=(${rcs[@]})"
-
-nsamples=${4:-65536}
 
 # log header
 echo -e "tune\trc_fpga_temp\trc_card_temp\trc_card_id\trc_card_type\trc_slot_id\trc_fw_rev\trc\tcol\tdatedir\tdata">>${LOGFILE}
@@ -66,7 +52,18 @@ do
     do
         for ((col=0;col<${#columns[@]};col+=1)); do
             suffix="${idx}"
-            "$(dirname "$0")/run_mce_raw_acq_1col.sh" ${rc} ${columns[$col]} ${suffix} ${nsamples} ${dirname}
+            is_first=$(( idx == 1 && col == 0 ))
+            is_last=$(( idx == ndatasets && col == ${#columns[@]} - 1 ))
+            if   [ "$is_first" == "1" ] && [ "$is_last" == "1" ]; then
+                mode_flag=""                   # only dataset: full setup and restore
+            elif [ "$is_first" == "1" ]; then
+                mode_flag="no_restore"         # first of many: setup, no restore
+            elif [ "$is_last" == "1" ]; then
+                mode_flag="no_setup"           # last of many: no setup, restore
+            else
+                mode_flag="no_setup_no_restore" # middle: skip both
+            fi
+            "$(dirname "$0")/run_mce_raw_acq_1col.sh" ${rc} ${columns[$col]} ${suffix} "${nsamples}" "${dirname}" "${mode_flag}"
 
             # RC info to log
             FPGA_TEMP=$(mce_status -s | grep "rc${rc}" | grep fpga_temp | awk '{print $4}')
