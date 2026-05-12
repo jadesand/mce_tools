@@ -63,7 +63,7 @@ for CS in "${chips[@]}"; do
         echo "No freeze stage specified, reconfig CS=$CS."
         reconfig_two_level -t "$tune_ctime" -c "$CS" -d "$date"
     fi
-    "$(dirname "$0")/run_mce_raw_acq.sh" "$ndatasets" "$columns_str" "$rcs_str"
+    "$(dirname "$0")/run_mce_raw_acq.sh" -n "$ndatasets" -c "$columns_str" -R "$rcs_str"
 
     # Find the most recently created directory
     LATEST=$(find "$MAS_DATA_REAL" -maxdepth 1 -type d \
