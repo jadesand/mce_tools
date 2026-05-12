@@ -18,9 +18,16 @@ fi
 rc=$1
 col=$2
 suffix=$3
-nsamples=${4:-65536}
+nsamples=${4:-""}
 dirname=${5:-"raw_$(date +%s)"}
+mode_flag=${6:-""}
+
+nsamples_arg=""
+[ -n "$nsamples" ] && nsamples_arg="-s $nsamples"
+
+mode_arg=""
+[ -n "$mode_flag" ] && mode_arg="--${mode_flag//_/-}"
 
 echo "acquiring 50 MHz data on rc${rc} column ${col} ..."
-# mce_raw_acq_1col ${rc} ${col} ${nsamples} "rc${rc}_c${col}_${suffix}"
-"$(dirname "$0")/mce_raw_acq_1col_dev.sh" ${rc} ${col} ${nsamples} "rc${rc}_c${col}_${suffix}" "${dirname}"
+"$(dirname "$0")/mce_raw_acq_1col_dev.sh" \
+    -r ${rc} -c ${col} ${nsamples_arg} -S "rc${rc}_c${col}_${suffix}" -d "${dirname}" ${mode_arg}
