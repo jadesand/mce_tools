@@ -4,31 +4,31 @@ import os
 import sys
 import time
 from datetime import datetime
-from subprocess import Popen,PIPE
+import subprocess
 
 from mce_control import mce_control
 import auto_setup as ast
 
 _SAB = {
-    'range': range(-100,100,5),
+    'range': range(-100,100,10),
     'nframes': 1000,
     'card': 'sa',
     'param': 'bias',
 }
 _SAFB= {
-    'range': range(-1500,1501,15),
+    'range': range(-500,501,50),
     'nframes': 30,
     'card': 'sa',
     'param': 'fb',
 }
 _SQ1B= {
-    'range': range(-100,100,5),
+    'range': range(-100,100,10),
     'nframes': 1000,
     'card': 'sq1',
     'param': 'bias',
 }
 _SQ1FB= {
-    'range': range(-500,501,5),
+    'range': range(-500,501,50),
     'nframes': 30,
     'card': 'sq1',
     'param': 'fb_const',
@@ -42,7 +42,7 @@ USAGE="""
 
 Sweep the specified parameter for the specified row, and save the data to a file
 in the current data directory with a name like 
-"<timestamp>_openloop_ramp_<sweep_target>_r<row>.dat".
+"ramp_<timestamp>/openloop_ramp_<sweep_target>_r<row>.npy".
 
 The "sweep_target" argument indicates which parameter to sweep, can be one of:
  - sab: SA bias
@@ -60,8 +60,7 @@ o.add_option('--config', default=None, type=str,
 opts, args = o.parse_args()
 
 SWEEP_TARGET = ['sab', 'safb', 'sq1b', 'sq1fb']
-if len(args) != 2:
-    o.error("Provide the sweep type: (%s) and the row number." % ','.join(SWEEP_TARGET))
+
 if args[0] not in SWEEP_TARGET:
     o.error("Provide the sweep type: (%s)." % ','.join(SWEEP_TARGET))
 
@@ -76,8 +75,12 @@ cfg = ast.config.configFile(exp_file)
 
 
 target = args[0].lower()
-row = int(args[1])
+row = None if len(args) == 1 else int(args[1])
+
 ctime = int(time.mktime(datetime.now().timetuple()))
+dirname = os.path.join(MAS_DATA, 'ramp_'+str(ctime))
+if not os.path.exists(dirname):
+    os.makedirs(dirname)
 
 mce = mce_control()
 
@@ -89,17 +92,28 @@ card = target_dict['card']
 param = target_dict['param']
 print '{}={}'.format(args[0].lower(), sweep_range)
 
-ofn = os.path.join(MAS_DATA, '%d_openloop_ramp_%s_r%d.dat'%(ctime, target, row))
-of = open(ofn,'a+')
+fname_x = os.path.join(dirname, 'openloop_ramp_%s'%(target))
+np.save(fname_x, np.array(sweep_range))
 
-orig = Popen(["mce_cmd","-x","rb",card,param],stdout=PIPE).communicate()[0].strip()
-orig = np.array([int(ob) for ob in Popen(["mce_cmd","-x","rb",card,param],stdout=PIPE).communicate()[0].strip().split('\n')[1].split(':')[2].split()],'int')
+fname_ymed = os.path.join(dirname, 'openloop_ramp_data_med')
+fname_ystd = os.path.join(dirname, 'openloop_ramp_data_std')
+
+### Freeze servo
+freeze_cmd = ['python', 'mce_freeze_servo_mux11d.py', card]
+if row is not None:
+    freeze_cmd += ['--row', str(row)]
+subprocess.call(freeze_cmd)
+
+orig = subprocess.Popen(["mce_cmd","-x","rb",card,param],stdout=subprocess.PIPE).communicate()[0].strip()
+orig = np.array([int(ob) for ob in subprocess.Popen(["mce_cmd","-x","rb",card,param],stdout=subprocess.PIPE).communicate()[0].strip().split('\n')[1].split(':')[2].split()],'int')
 print 'orig_%s_%s='%(card, param), orig
 
 columns_off = np.array(cfg['columns_off'][:len(orig)])
 print 'columns_off=',columns_off
 
 ncol = len(orig)
+ymed = []
+ystd = []
 for swp in sweep_range:
 
     new = orig + np.array([swp]*ncol)
@@ -112,10 +126,20 @@ for swp in sweep_range:
     time.sleep(0.1) # let settle
 
     # 0 in [0,:,:]=row, which shouldn't matter for this data
-    data = mce.read_data(nframes, row_col=True).data[row,:,:]    
-    errs, derrs = data.mean(axis=-1), data.std(axis=-1)
-    err=['%.4e'%err for err in errs]
-    of.write(str(swp)+'\t'+'\t'.join(err)+'\n')
+    data = mce.read_data(nframes, row_col=True).data
+    med, std = data.mean(axis=-1), data.std(axis=-1)
+    ymed.append(med)
+    ystd.append(std)
+np.save(fname_ymed, np.array(ymed))
+np.save(fname_ystd, np.array(ystd)) 
 
-mce.write(card, param, orig)    
-of.close()
+print 'Done. Data saved to %s'%dirname
+
+# mce.write(card, param, orig)
+print 'reconfig...'
+# Partial reconfig (does not fully restore MCE state for consecutive runs):
+# subprocess.call(['mce_zero_bias'], stdout=open(os.devnull, 'w'))
+# time.sleep(1)
+# subprocess.call(['mce_make_config', '-x', '-e', exp_file], stdout=open(os.devnull, 'w'))
+# mce.servo_mode(3)
+subprocess.call(['auto_setup', '--rc=2'])

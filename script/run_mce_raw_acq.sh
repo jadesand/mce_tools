@@ -3,6 +3,7 @@
 # 20260116 copied from b3tower3:/home/bicep3/shawn/mce_scripts/go_raw_all.sh
 
 SCRIPT_NAME=$(basename "$0")
+FREEZE_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_freeze_servo_mux11d.py"
 
 ndatasets=1
 columns=(0 1 2 3 4 5 6 7)
@@ -10,21 +11,25 @@ rcs=(1 2)
 # columns=(0 1)
 # rcs=(1)
 nsamples=""
+freeze_stage=""
+row=0
 
-opts=$(getopt -o n:c:R:s: \
-    --long ndatasets:,col:,rcs:,nsamples: \
+opts=$(getopt -o n:c:R:s:f:r: \
+    --long ndatasets:,col:,rcs:,nsamples:,freeze-stage:,row: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
 
 while true; do
     case "$1" in
-        -n|--ndatasets) ndatasets="$2"; shift 2 ;;
-        -c|--col)       IFS=',' read -r -a columns <<< "$2"; shift 2 ;;
-        -R|--rcs)       IFS=',' read -r -a rcs     <<< "$2"; shift 2 ;;
-        -s|--nsamples)  nsamples="$2"; shift 2 ;;
-        --)             shift; break ;;
-        *)              echo "Unknown option: $1"; exit 1 ;;
+        -n|--ndatasets)     ndatasets="$2"; shift 2 ;;
+        -c|--col)           IFS=',' read -r -a columns <<< "$2"; shift 2 ;;
+        -R|--rcs)           IFS=',' read -r -a rcs     <<< "$2"; shift 2 ;;
+        -s|--nsamples)      nsamples="$2"; shift 2 ;;
+        -f|--freeze-stage)  freeze_stage="$2"; shift 2 ;;
+        -r|--row)           row="$2"; shift 2 ;;
+        --)                 shift; break ;;
+        *)                  echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -47,6 +52,17 @@ do
     CARD_TYPE=`echo "$MCE_OUTPUT" | grep rc${rc} | grep card_type | awk '{print $4}'`
     SLOT_ID=`echo "$MCE_OUTPUT" | grep rc${rc} | grep slot_id | awk '{print $4}'`
     FW_REV=`echo "$MCE_OUTPUT" | grep rc${rc} | grep fw_rev | awk '{print $4}'`
+
+    if [[ -n "$freeze_stage" ]]; then
+        echo "Freezing servo for row=$row, stage=$freeze_stage..."
+        if [[ "$freeze_stage" == "preamp" ]] || [[ "$freeze_stage" == "sa" ]]; then
+            auto_setup --rc=$rc --last-stage=sa_ramp
+        else
+            auto_setup --rc=$rc --last-stage=sq1_ramp
+        fi
+        sleep 1
+        python "$FREEZE_SCRIPT" --row "$row" $freeze_stage
+    fi
     
     for idx in `seq 1 ${ndatasets}`;
     do

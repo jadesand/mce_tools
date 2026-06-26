@@ -2,11 +2,12 @@
 
 SCRIPT_NAME=$(basename "$0")
 FREEZE_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_freeze_servo_mux11d.py"
+RECONFIG_SCRIPT="/home/mce/rshi/mce_scripts/script/reconfig_two_level.sh"
 
 tune_ctime=""
 date="current_data"
 columns=(4 5 6 7)
-chips=(10 11 12 13 14 15 16 17)
+chips=(11)
 rcs=(2)
 freeze_stage=""
 row=0
@@ -61,7 +62,7 @@ for CS in "${chips[@]}"; do
         python "$FREEZE_SCRIPT" --row "$row" $freeze_stage
     else
         echo "No freeze stage specified, reconfig CS=$CS."
-        reconfig_two_level -t "$tune_ctime" -c "$CS" -d "$date"
+        bash "$RECONFIG_SCRIPT" -t "$tune_ctime" -c "$(($CS-10))" -d "$date"
     fi
     "$(dirname "$0")/run_mce_raw_acq.sh" -n "$ndatasets" -c "$columns_str" -R "$rcs_str"
 
