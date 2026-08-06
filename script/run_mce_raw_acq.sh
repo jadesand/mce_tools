@@ -3,7 +3,9 @@
 # 20260116 copied from b3tower3:/home/bicep3/shawn/mce_scripts/go_raw_all.sh
 
 SCRIPT_NAME=$(basename "$0")
-FREEZE_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_freeze_servo_mux11d.py"
+SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+MCE_TOOLS=$(dirname "$SCRIPT_DIR")
+FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
 ndatasets=1
 columns=(0 1 2 3 4 5 6 7)

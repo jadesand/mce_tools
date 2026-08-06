@@ -24,8 +24,10 @@ source $MAS_SCRIPT/mas_library.bash # RS: mostly define some functions
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_NAME_NO_EXT="${SCRIPT_NAME%.*}"
 SCRIPT_FULL_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_FULL_PATH")
+MCE_TOOLS=$(dirname "$(dirname "$SCRIPT_DIR")")
 
-FREEZE_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_freeze_servo_mux11d.py"
+FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
 # Default values
 channel_list="superfast_list.txt"

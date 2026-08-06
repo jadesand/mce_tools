@@ -1,8 +1,10 @@
 #!/bin/bash
 
 SCRIPT_NAME=$(basename "$0")
-FREEZE_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_freeze_servo_mux11d.py"
-RECONFIG_SCRIPT="/home/mce/rshi/mce_scripts/script/reconfig_two_level.sh"
+SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+MCE_TOOLS=$(dirname "$SCRIPT_DIR")
+FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
+RECONFIG_SCRIPT="$MCE_TOOLS/script/reconfig_two_level.sh"
 
 tune_ctime=""
 date="current_data"

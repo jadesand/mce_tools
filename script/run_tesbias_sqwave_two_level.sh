@@ -27,8 +27,10 @@ source $MAS_SCRIPT/mas_library.bash
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_NAME_NO_EXT="${SCRIPT_NAME%.*}"
 SCRIPT_FULL_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_FULL_PATH")
+MCE_TOOLS=$(dirname "$SCRIPT_DIR")
 
-BUTTER_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_butter_params.py"
+BUTTER_SCRIPT="$MCE_TOOLS/python/mce_butter_params.py"
 
 # Default values
 tune_ctime=""
