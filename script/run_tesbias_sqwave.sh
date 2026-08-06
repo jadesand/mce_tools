@@ -9,11 +9,11 @@
 # The TES bias is controlled via `wb bc3 flux_fb` (which is where `tes bias` maps to
 # on this system). All bias lines are toggled together (same step_size).
 #
-# Output: one file per CS, named calib_tesbias, containing all rows and columns.
+# Output: a single file named calib_tesbias, containing all rows and columns.
 #
 # Usage: run_tesbias_sqwave.sh [OPTIONS]
 #   -t, --tune-ctime CTIME       tune ctime (REQUIRED)
-#   -r, --rc RC                  readout card for acq_config, e.g. 1, 2, s (default: 2)
+#   -r, --rc RC                  readout card for acq_config, e.g. 1, 2, s (default: 1)
 #   --overwrite                  allow overwriting existing directory
 #   -R, --run RUN                output run extension (default: 0)
 #   -l, --row-len N              row length (default: 119)
@@ -32,12 +32,12 @@ BUTTER_SCRIPT="/home/mce/rshi/mce_scripts/python/mce_butter_params.py"
 
 # Default values
 tune_ctime=""
-rc="2"
+rc="1"
 overwrite="false"
 run="0"
 row_len=119
-max_rows=11
-step_size=2
+max_rows=41
+step_size=1
 n_cycles=50
 period=50
 f_cutoff=75
@@ -75,7 +75,7 @@ fi
 n_bias=16
 
 # Define tune directory
-tune_dir="$MAS_DATA/two_level_$tune_ctime"
+tune_dir="$MAS_DATA/$tune_ctime"
 
 # Make output directory
 basedir=${SCRIPT_NAME_NO_EXT}'_run'$run
@@ -122,92 +122,75 @@ bias_tess 0
 sleep 1
 
 ####################################################################
-# Main acquisition loop: iterate over all CS in the tune directory
+# Main acquisition
 ####################################################################
 
-for cs_dir in $(ls -d "$tune_dir"/CS* | sort -t S -k 2 -n); do
-    cs=$(basename "$cs_dir")
+# Copy experiment.cfg from tune directory
+cp "$tune_dir/experiment.cfg" "$MAS_DATA/$basedir/"
 
-    echo "=========================================="
-    echo "Processing $cs"
-    echo "=========================================="
+# Set up MCE
+mce_zero_bias > /dev/null 2>&1
+sleep 1
+mce_make_config -x -e "$MAS_DATA/$basedir/experiment.cfg"
+sleep 1
 
-    # Create CS subdirectory
-    mkdir -p "$MAS_DATA/$basedir/$cs"
+# Set row_len and Butterworth filter
+mce_cmd -qx wb sys row_len $row_len
+sleep 1
+mce_cmd -qx wb rca sample_dly $(($row_len - 10))
+sleep 1
+set_butter_filter $row_len
+sleep 1
 
-    # Copy experiment.cfg from tune directory
-    cp "$cs_dir/experiment.cfg" "$MAS_DATA/$basedir/$cs/"
+echo "row_len set to: $(command_reply rb sys row_len)"
+echo "sample_dly set to: $(command_reply rb rca sample_dly)"
 
-    # Set up MCE for this CS
-    mce_zero_bias > /dev/null 2>&1
-    sleep 1
-    mce_make_config -x -e "$MAS_DATA/$basedir/$cs/experiment.cfg"
-    sleep 1
+# Ensure tes bias is at zero
+bias_tess 0
 
-    # Set row_len and Butterworth filter
-    mce_cmd -qx wb sys row_len $row_len
-    sleep 1
-    mce_cmd -qx wb rca sample_dly $(($row_len - 10))
-    sleep 1
-    set_butter_filter $row_len
-    sleep 1
+echo "------------------------------------------"
+echo "TES bias square wave: step_size=$step_size n_cycles=$n_cycles"
+echo "------------------------------------------"
 
-    echo "row_len set to: $(command_reply rb sys row_len)"
-    echo "sample_dly set to: $(command_reply rb rca sample_dly)"
+# Build bias arrays: all lines toggled together
+bias_zero=$(make_bias_array 0)
+bias_high=$(make_bias_array $step_size)
 
-    # Ensure tes bias is at zero
-    bias_tess 0
+# Build the .scr file
+script=$MAS_TEMP/tesbias_sqwave.scr
+rm -f $script
 
-    echo "------------------------------------------"
-    echo "TES bias square wave: $cs step_size=$step_size n_cycles=$n_cycles"
-    echo "------------------------------------------"
+filename=$MAS_DATA/$basedir/calib_tesbias
+if [ "$overwrite" = "true" ]; then
+    rm -f $filename*
+fi
 
-    # Build bias arrays: all lines toggled together
-    bias_zero=$(make_bias_array 0)
-    bias_high=$(make_bias_array $step_size)
+echo "acq_config $filename rc$rc" >> $script
 
-    # Build the .scr file
-    script=$MAS_TEMP/tesbias_sqwave.scr
-    rm -f $script
-
-    filename=$MAS_DATA/$basedir/$cs/calib_tesbias
-    if [ "$overwrite" = "true" ]; then
-        rm -f $filename*
-    fi
-
-    echo "acq_config $filename rc$rc" >> $script
-
-    for ((icycle=0; icycle<n_cycles; icycle++)); do
-        # High half-cycle
-        # echo "wb bc3 flux_fb $bias_high" >> $script
-        echo "wb tes bias $bias_high" >> $script
-        echo "sleep 10" >> $script
-        echo "acq_go $period" >> $script
-        # Low half-cycle
-        # echo "wb bc3 flux_fb $bias_zero" >> $script
-        echo "wb tes bias $bias_zero" >> $script
-        echo "sleep 10" >> $script
-        echo "acq_go $period" >> $script
-    done
-
-    # Restore bias to zero
+for ((icycle=0; icycle<n_cycles; icycle++)); do
+    # High half-cycle
+    # echo "wb bc3 flux_fb $bias_high" >> $script
+    echo "wb tes bias $bias_high" >> $script
+    echo "sleep 10" >> $script
+    echo "acq_go $period" >> $script
+    # Low half-cycle
     # echo "wb bc3 flux_fb $bias_zero" >> $script
     echo "wb tes bias $bias_zero" >> $script
-
-    # Execute
-    echo "running tesbias_sqwave.scr"
-    mce_cmd -iqf $script
-    echo "done"
-
-    # Archive the script
-    cp $script "$MAS_DATA/$basedir/$cs/tesbias_sqwave.scr"
-
-    # Reconfigure MCE before next CS
-    sleep 1
-    mce_make_config -x -e "$MAS_DATA/$basedir/$cs/experiment.cfg"
-    sleep 1
-
+    echo "sleep 10" >> $script
+    echo "acq_go $period" >> $script
 done
+
+# Restore bias to zero
+# echo "wb bc3 flux_fb $bias_zero" >> $script
+echo "wb tes bias $bias_zero" >> $script
+
+# Execute
+echo "running tesbias_sqwave.scr"
+mce_cmd -iqf $script
+echo "done"
+
+# Archive the script
+cp $script "$MAS_DATA/$basedir/tesbias_sqwave.scr"
 
 # Final cleanup
 bias_tess 0
