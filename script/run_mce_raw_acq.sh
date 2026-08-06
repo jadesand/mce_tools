@@ -37,6 +37,8 @@ CTIME_FOR_LOGFILE=$(date +%s)
 dirname=raw_${CTIME_FOR_LOGFILE}
 mkdir -p "$MAS_DATA/$dirname"
 
+exec > >(tee "$MAS_DATA/$dirname/${dirname}.out") 2>&1
+
 LOGFILE=$MAS_DATA/$dirname/log.txt
 echo "OUTFILE=${LOGFILE}"
 
@@ -58,7 +60,7 @@ do
         if [[ "$freeze_stage" == "preamp" ]] || [[ "$freeze_stage" == "sa" ]]; then
             auto_setup --rc=$rc --last-stage=sa_ramp
         else
-            auto_setup --rc=$rc --last-stage=sq1_ramp
+            auto_setup --rc=$rc
         fi
         sleep 1
         python "$FREEZE_SCRIPT" --row "$row" $freeze_stage
