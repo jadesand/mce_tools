@@ -1,4 +1,5 @@
 # User specified files
+*.txt
 */dev.txt
 
 # Byte-compiled / optimized / DLL files
