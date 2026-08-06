@@ -1,5 +1,34 @@
 #!/bin/bash
 PARENT_NAME="two_level_$(date +%s)"
+rc=1
+chip_list=(10 11 12 13 14)
+
+opts=$(getopt -o r:c: --long rc:,chip_list: -n "$(basename "$0")" -- "$@")
+if [[ $? -ne 0 ]]; then
+    exit 1
+fi
+eval set -- "$opts"
+
+while true; do
+    case "$1" in
+        -r|--rc)
+            rc="$2"
+            shift 2
+            ;;
+        -c|--chip_list)
+            read -r -a chip_list <<< "$2"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal error!" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Resolve the symlink to get the real path
 MAS_DATA_REAL="/data/cryo/$(date +%Y%m%d)"
@@ -15,7 +44,6 @@ mkdir -p "$MAS_DATA_REAL/analysis/$PARENT_NAME"
 # sq1_servo_gain_per_chip=(-0.01 0.01 0.01 0.01 0.01 0.01 0.01 -0.01)
 
 {
-chip_list=(10 11 12 13 14 15 16 17)
 for i in "${!chip_list[@]}"; do
     CS=${chip_list[$i]}
     echo "CS=$CS"
@@ -31,7 +59,7 @@ for i in "${!chip_list[@]}"; do
     # Point dead_squid1.cfg at the per-CS mask before auto_setup reads it
     ln -sf "$DEAD_DIR/dead_squid1_cs$((CS-10)).cfg" "$DEAD_DIR/dead_squid1.cfg"
 
-    auto_setup --rc=2
+    auto_setup --rc=$rc
     
     # Find the most recently created directory
     LATEST=$(find "$MAS_DATA_REAL" -maxdepth 1 -type d \
