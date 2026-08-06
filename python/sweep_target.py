@@ -16,7 +16,7 @@ _SAB = {
     'param': 'bias',
 }
 _SAFB= {
-    'range': range(-500,501,50),
+    'range': range(-2500,2501,100),
     'nframes': 30,
     'card': 'sa',
     'param': 'fb',
@@ -28,7 +28,7 @@ _SQ1B= {
     'param': 'bias',
 }
 _SQ1FB= {
-    'range': range(-500,501,50),
+    'range': range(-2500,2501,250),
     'nframes': 30,
     'card': 'sq1',
     'param': 'fb_const',
@@ -87,13 +87,12 @@ mce = mce_control()
 
 target_dict = eval('_'+args[0].upper())
 nframes = target_dict['nframes']
-sweep_range = target_dict['range']
+sweep_range = np.array(target_dict['range'])
 card = target_dict['card']
 param = target_dict['param']
 print '{}={}'.format(args[0].lower(), sweep_range)
 
 fname_x = os.path.join(dirname, 'openloop_ramp_%s'%(target))
-np.save(fname_x, np.array(sweep_range))
 
 fname_ymed = os.path.join(dirname, 'openloop_ramp_data_med')
 fname_ystd = os.path.join(dirname, 'openloop_ramp_data_std')
@@ -107,6 +106,7 @@ subprocess.call(freeze_cmd)
 orig = subprocess.Popen(["mce_cmd","-x","rb",card,param],stdout=subprocess.PIPE).communicate()[0].strip()
 orig = np.array([int(ob) for ob in subprocess.Popen(["mce_cmd","-x","rb",card,param],stdout=subprocess.PIPE).communicate()[0].strip().split('\n')[1].split(':')[2].split()],'int')
 print 'orig_%s_%s='%(card, param), orig
+np.save(fname_x, np.array(orig[:, None]+sweep_range[None, :]))
 
 columns_off = np.array(cfg['columns_off'][:len(orig)])
 print 'columns_off=',columns_off
@@ -142,4 +142,4 @@ print 'reconfig...'
 # time.sleep(1)
 # subprocess.call(['mce_make_config', '-x', '-e', exp_file], stdout=open(os.devnull, 'w'))
 # mce.servo_mode(3)
-subprocess.call(['auto_setup', '--rc=2'])
+subprocess.call(['auto_setup'])
