@@ -7,7 +7,8 @@ RECONFIG_SCRIPT="/home/mce/rshi/mce_scripts/script/reconfig_two_level.sh"
 tune_ctime=""
 date="current_data"
 columns=(4 5 6 7)
-chips=(11)
+chips=(10 11 12 13 14 15 16 17)
+# chips=(11)
 rcs=(2)
 freeze_stage=""
 row=0
@@ -54,9 +55,9 @@ for CS in "${chips[@]}"; do
         cp "$MAS_DATA_ROOT/${date}/two_level_${tune_ctime}/CS$((CS-10))/experiment.cfg" $MAS_DATA/experiment.cfg
         # Be careful here
         if [[ "$freeze_stage" == "preamp" ]] || [[ "$freeze_stage" == "sa" ]]; then
-            auto_setup --rc=2 --last-stage=sa_ramp
+            auto_setup --rc=$rcs_str --last-stage=sa_ramp
         else
-            auto_setup --rc=2 --last-stage=sq1_ramp
+            auto_setup --rc=$rcs_str # --last-stage=sq1_ramp # somehow stopping at sq1_ramp is not working, so just let it go to the end
         fi
         sleep 1
         python "$FREEZE_SCRIPT" --row "$row" $freeze_stage
