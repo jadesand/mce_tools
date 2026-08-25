@@ -3,16 +3,20 @@
 # Take superfast noise data (~400kHz, rectangle + raw mode) and fb_const
 # square-wave calibration, for a list of rows and, per row, a list of columns.
 #
-# Pure data-taking: assumes the MCE is already reconfigured and biased for
-# this run by the caller. row_len is fixed for superfast acquisition (not
-# swept), so it is set internally rather than passed in.
+# Pure data-taking: assumes the MCE is already biased for this run by the
+# caller. row_len is fixed for superfast acquisition (not swept), so it is
+# set internally rather than passed in. One exception to "no MCE state":
+# this script calls mce_reconfig once per row in its own loop, to undo
+# num_rows_reported=1 left behind by the previous row's generated .scr --
+# that's internal bookkeeping for this script's own loop, not whole-run
+# setup, so it stays here rather than being pushed onto the caller.
 #
 # RS - 2026-08-19 split out of noise_superfast_ba_i6.sh
 #
 # Usage: superfast.sh [OPTIONS]
-#   -d, --dir DIR              output directory to write into; must already exist.
-#                                 Use this when a master script has already created a
-#                                 per-bias subfolder. (absolute, or relative to $MAS_DATA)
+#   -d, --dir DIR              output directory to write into, relative to $MAS_DATA;
+#                                 must already exist. Use this when a master script
+#                                 has already created a per-bias subfolder.
 #   -R, --run RUN               if --dir is not given, self-create and use
 #                                 $MAS_DATA/superfast_run<RUN> (default: 0)
 #   --overwrite                   if --dir is not given, allow overwriting an
@@ -31,7 +35,6 @@ SCRIPT_NAME=$(basename "$0")
 SCRIPT_NAME_NO_EXT="${SCRIPT_NAME%.*}"
 SCRIPT_FULL_PATH=$(readlink -f "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT_FULL_PATH")
-MCE_TOOLS=$(dirname "$(dirname "$SCRIPT_DIR")")
 
 FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
@@ -74,17 +77,21 @@ fi
 
 #####################################################################
 # resolve output directory: explicit --dir, or self-create from --run
+#
+# dir is kept RELATIVE to $MAS_DATA for plain filesystem ops (mkdir, cp,
+# tee, redirects). Unlike mce_run, acq_config (embedded in the generated
+# .scr) does NOT prepend $MAS_DATA itself, so filename/extn below are
+# built as $MAS_DATA/$dir/... (absolute) instead.
 #####################################################################
 
 if [ -n "$dir" ]; then
     # Explicit --dir: caller (e.g. a master script) already created this,
     # just use it.
     standalone="false"
-    if [ ! -d "$dir" ] && [ ! -d "$MAS_DATA/$dir" ]; then
-        echo "Error: output directory not found: $dir"
+    if [ ! -d "$MAS_DATA/$dir" ]; then
+        echo "Error: output directory not found: $MAS_DATA/$dir"
         exit 1
     fi
-    [ -d "$dir" ] || dir="$MAS_DATA/$dir"
 else
     basedir=$SCRIPT_NAME_NO_EXT'_run'$run
     if [ -d $MAS_DATA/$basedir ]; then
@@ -99,12 +106,12 @@ else
     else
         mkdir $MAS_DATA/$basedir
     fi
-    dir=$MAS_DATA/$basedir
+    dir=$basedir
 
     # Archive this script and the channel list, and log all output.
-    cp "$SCRIPT_FULL_PATH" "$dir/$SCRIPT_NAME"
-    cp "$channel_list" "$dir/channel_list.txt"
-    exec > >(tee -a "$dir/${SCRIPT_NAME_NO_EXT}.log") 2>&1
+    cp "$SCRIPT_FULL_PATH" "$MAS_DATA/$dir/$SCRIPT_NAME"
+    cp "$channel_list" "$MAS_DATA/$dir/channel_list.txt"
+    exec > >(tee -a "$MAS_DATA/$dir/${SCRIPT_NAME_NO_EXT}.log") 2>&1
     echo "=== $(date) starting $SCRIPT_NAME ==="
 fi
 
@@ -169,6 +176,10 @@ while IFS=' ' read -r row cols; do
     # in the row of interest, then after accumulating run the script
     ####################################################################
     sleep 1
+    # get back to normal state (num_rows_reported etc, left at 1 by the
+    # previous row's generated .scr) before freezing the servo on this row
+    mce_reconfig
+    sleep 1
 
     python $FREEZE_SCRIPT --row $row --keep-tes-bias sq1
 
@@ -204,7 +215,7 @@ while IFS=' ' read -r row cols; do
         # take super-fast noise timestreams: 400kHz, sampling channel of interest (rectangle + raw mode)
         ####################################################################
 
-        filename=$dir'/superfast_row'$row'_col'$col
+        filename=$MAS_DATA/$dir'/superfast_row'$row'_col'$col
 
         echo "wb sys row_len "$row_len >> $script
         echo "wb rca sample_dly "$sampledly >> $script
@@ -231,7 +242,7 @@ while IFS=' ' read -r row cols; do
         echo "wb cc data_rate "$def_datarate >> $script
         echo "wb rca readout_col_index "$def_colindex >> $script
 
-        extn=$dir'/calib_row'$row'_col'$col
+        extn=$MAS_DATA/$dir'/calib_row'$row'_col'$col
 
         echo "fb_const_calib="${fb_val[@]}
 
@@ -271,8 +282,8 @@ while IFS=' ' read -r row cols; do
     echo "running noise_superfast.scr"
     mce_cmd -iqf $script
     echo "done with noise_superfast.scr"
-    cp $script $dir"/noise_superfast.scr.row"$row
+    cp $script $MAS_DATA/$dir"/noise_superfast.scr.row"$row
 
 done <<< "$channel_entries"
 
-mce_status -s > "$dir/mce_status.txt"
+mce_status -s > "$MAS_DATA/$dir/mce_status.txt"

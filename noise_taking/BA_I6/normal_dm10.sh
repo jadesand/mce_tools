@@ -1,24 +1,28 @@
 #!/bin/bash
 #
-# Take normal rate (data_mode 1) noise for all channels, looped over
-# a list of row_len values. Pure data-taking: assumes the MCE is already
-# reconfigured and biased for this run by the caller; this script only sets
-# row_len/sample_dly (acquisition parameters, not shared MCE state) and
-# runs the acquisition. Data_mode 1 is raw data, so unlike data_mode 10 it
-# is taken without the Butterworth filter.
+# Take normal rate (data_mode 10) noise for all channels, at whatever
+# row_len is currently set on the MCE. Pure data-taking: assumes the MCE is
+# already reconfigured, biased, and has row_len/sample_dly/filter set for
+# this run by the caller -- this script only runs the acquisition. --rowlen
+# is used purely to label the output filename with the row_len in effect.
 #
 # RS - 2026-08-19 split out of noise_normal_fast_rowlen_ba_i6.sh
+# RS - 2026-08-23 row_len/sample_dly/filter setting moved to the caller
+#      (noise_taking_ba_i6.sh), since normal_dm10/normal_dm1/fast all sweep
+#      the same row_len list and setting it three times per row_len was
+#      redundant
 #
-# Usage: normal_dm1.sh [OPTIONS]
-#   -d, --dir DIR         output directory to write into; must already exist.
-#                            Use this when a master script has already created a
-#                            per-bias subfolder. (absolute, or relative to $MAS_DATA)
+# Usage: normal_dm10.sh [OPTIONS]
+#   -d, --dir DIR         output directory to write into, relative to $MAS_DATA;
+#                            must already exist. Use this when a master script
+#                            has already created a per-bias subfolder.
 #   -R, --run RUN          if --dir is not given, self-create and use
-#                            $MAS_DATA/normal_dm1_run<RUN> (default: 0)
+#                            $MAS_DATA/normal_dm10_run<RUN> (default: 0)
 #   --overwrite              if --dir is not given, allow overwriting an
-#                            existing normal_dm1_run<RUN> directory
-#   -l, --rowlens LIST      comma-separated row_len values to loop over (required)
-#   -n, --nsamp N           number of samples to acquire per row_len (default: 6800)
+#                            existing normal_dm10_run<RUN> directory
+#   -l, --rowlen ROWLEN     row_len currently in effect on the MCE, used only
+#                            to label the output filename (default: 119)
+#   -n, --nsamp N           number of samples to acquire (default: 6800)
 
 source $MAS_SCRIPT/mas_library.bash
 
@@ -34,11 +38,11 @@ SCRIPT_DIR=$(dirname "$SCRIPT_FULL_PATH")
 dir=""
 run="0"
 overwrite="false"
-rowlens=119
+rowlen=119
 nsamp=6800
 
 opts=$(getopt -o d:R:l:n: \
-    --long dir:,run:,overwrite,rowlens:,nsamp: \
+    --long dir:,run:,overwrite,rowlen:,nsamp: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -48,7 +52,7 @@ while true; do
         -d|--dir)       dir="$2"; shift 2 ;;
         -R|--run)       run="$2"; shift 2 ;;
         --overwrite)    overwrite="true"; shift ;;
-        -l|--rowlens)   rowlens="$2"; shift 2 ;;
+        -l|--rowlen)    rowlen="$2"; shift 2 ;;
         -n|--nsamp)     nsamp="$2"; shift 2 ;;
         --)             shift; break ;;
         *)              echo "Unknown option: $1"; exit 1 ;;
@@ -57,16 +61,19 @@ done
 
 ####################################################################
 # resolve output directory: explicit --dir, or self-create from --run
+#
+# dir is kept RELATIVE to $MAS_DATA throughout (mce_run prepends
+# $MAS_DATA itself); use $MAS_DATA/$dir for plain filesystem ops
+# (mkdir, cp, tee, redirects).
 ####################################################################
 
 if [ -n "$dir" ]; then
     # Explicit --dir: caller (e.g. a master script) already created this,
     # just use it.
-    if [ ! -d "$dir" ] && [ ! -d "$MAS_DATA/$dir" ]; then
-        echo "Error: output directory not found: $dir"
+    if [ ! -d "$MAS_DATA/$dir" ]; then
+        echo "Error: output directory not found: $MAS_DATA/$dir"
         exit 1
     fi
-    [ -d "$dir" ] || dir="$MAS_DATA/$dir"
 else
     basedir=$SCRIPT_NAME_NO_EXT'_run'$run
     if [ -d $MAS_DATA/$basedir ]; then
@@ -81,43 +88,26 @@ else
     else
         mkdir $MAS_DATA/$basedir
     fi
-    dir=$MAS_DATA/$basedir
+    dir=$basedir
 
     # Archive this script and log all output.
-    cp "$SCRIPT_FULL_PATH" "$dir/$SCRIPT_NAME"
-    exec > >(tee -a "$dir/${SCRIPT_NAME_NO_EXT}.log") 2>&1
+    cp "$SCRIPT_FULL_PATH" "$MAS_DATA/$dir/$SCRIPT_NAME"
+    exec > >(tee -a "$MAS_DATA/$dir/${SCRIPT_NAME_NO_EXT}.log") 2>&1
     echo "=== $(date) starting $SCRIPT_NAME ==="
 fi
 
 ####################################################################
 # START DATA ACQUISITION
-# loop over row_len
 ####################################################################
 
 sleep 1
-mce_cmd -qx wb rca data_mode 1
+mce_cmd -qx wb rca data_mode 10
 sleep 1
 
-IFS=',' read -ra rlen_arr <<< "$rowlens"
-for rlen in "${rlen_arr[@]}"
-do
-    echo "setting row_len="$rlen
+echo "taking normal, downsampled (data_mode 10), noise for all channels, row_len=$rowlen"
 
-    sleep 1
-    mce_cmd -qx wb sys row_len $rlen
-    sleep 1
-    mce_cmd -qx wb rca sample_dly $(($rlen-10))
-    sleep 1
+mce_run $dir'/all_rcs_datamode10_rowlen'$rowlen $nsamp s # this corresponds to t= #samples/fs (sec)
 
-    echo "row_len set to: $(command_reply rb sys row_len)"
-    echo "sample_dly set to: $(command_reply rb rca sample_dly)"
+sleep 1
 
-    echo "taking normal, data_mode 1, noise for all channels, row_len=$rlen"
-
-    sleep 1
-    mce_run $dir'/all_rcs_datamode1_rowlen'$rlen $nsamp s # this corresponds to t= #samples/fs (sec)
-
-    sleep 1
-done
-
-mce_status -s > "$dir/mce_status.txt"
+mce_status -s > "$MAS_DATA/$dir/mce_status.txt"

@@ -18,6 +18,11 @@
 #   --max-rows N             total number of rows (default: 41)
 #   -u, --unlatch-value V    bias value for unlatching detectors (default: 65535)
 #   -b, --unlatch-bias-mode M  "all", "half", or "manual" (default: all)
+#   -B, --bias-columns LIST  comma-separated columns to bias at every tes_bias step
+#                              (default: 0,1,2,3,4,6,7,11,12,14,15, matching
+#                              normal_fast_tbias_rowlen.txt). Detectors are assumed
+#                              to already be unlatched before this script runs, and
+#                              the same columns stay biased as tes_bias steps down.
 
 source $MAS_SCRIPT/mas_library.bash # RS: mostly define some functions
 
@@ -38,10 +43,11 @@ max_cols=16
 max_rows=41
 unlatch_value=65535
 unlatch_bias_mode="all"
+bias_columns="1,2,3,4,6,7,8,9,10,11,12,13,14,15"
 
 # Parse keyword arguments with getopt
-opts=$(getopt -o c:R:C:u:b: \
-    --long channel-list:,overwrite,run:,configprefix:,max-cols:,max-rows:,unlatch-value:,unlatch-bias-mode: \
+opts=$(getopt -o c:R:C:u:b:B: \
+    --long channel-list:,overwrite,run:,configprefix:,max-cols:,max-rows:,unlatch-value:,unlatch-bias-mode:,bias-columns: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -56,6 +62,7 @@ while true; do
         --max-rows)              max_rows="$2"; shift 2 ;;
         -u|--unlatch-value)     unlatch_value="$2"; shift 2 ;;
         -b|--unlatch-bias-mode) unlatch_bias_mode="$2"; shift 2 ;;
+        -B|--bias-columns)      bias_columns="$2"; shift 2 ;;
         --)                     shift; break ;;
         *)                      echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -74,15 +81,14 @@ fi
 # Read channel list file (format: "tes_bias row col1,col2,..." per line)
 channel_entries=$(grep -v '^\s*#' "$channel_list" | grep -v '^\s*$')
 
-# Pre-pass: build, for each tes_bias, the union of columns read out across
-# all its rows, so bias_tess can bias exactly those columns (not just 0 and 4).
-declare -A bias_cols
-while IFS=' ' read -r tbias row cols; do
-    IFS=',' read -ra col_arr <<< "$cols"
-    for col in "${col_arr[@]}"; do
-        bias_cols[$tbias,$col]=1
-    done
-done <<< "$channel_entries"
+# Fixed set of columns to bias at every tes_bias step (detectors are assumed
+# to already be unlatched before this script runs; the same columns stay
+# biased as tes_bias steps down, matching normal_fast_tbias_rowlen.txt).
+declare -A bias_col_set=()
+IFS=',' read -ra bias_col_arr <<< "$bias_columns"
+for col in "${bias_col_arr[@]}"; do
+    bias_col_set[$col]=1
+done
 
 basedir=$SCRIPT_NAME_NO_EXT'_run'$run
 
@@ -154,7 +160,7 @@ sampledly=$(( $row_len-$samplenum ))
 card1=3              #where rc1 fb_const is physically mapped per mce_status -g
 card2=4              #where rc2 fb_const is physically mapped per mce_status -g
 period=50            #min is 8000/41=195
-stepsize=200          #10 is good, keep it linear --> changed to 200 to increase S/N
+stepsize=50          #10 is good, keep it linear --> changed to 200 to increase S/N
 
 # Parameters for 10 kHz acquisition during fb_const square wave calibration
 fast_ccnumrows=1
@@ -180,23 +186,24 @@ def_datarate=`command_reply rb cc data_rate`
 # unlatch_bias_mode="all": all columns get unlatch_value
 # unlatch_bias_mode="half": only first half columns get unlatch_value (rest get 0)
 # unlatch_bias_mode="manual": use hardcoded values below
-if [ "$unlatch_bias_mode" = "manual" ]; then
-    echo "unlatch (manual) for 1s, no tile heater"
-    # Edit the line below to set manual bias values:
-    #             0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
-    bias_tess 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535
-else
-    unlatch_bias_args=""
-    for ((i=0; i<max_cols; i++)); do
-        if [ "$unlatch_bias_mode" = "half" ] && [ $i -ge $((max_cols / 2)) ]; then
-            unlatch_bias_args="$unlatch_bias_args 0"
-        else
-            unlatch_bias_args="$unlatch_bias_args $unlatch_value"
-        fi
-    done
-    echo "unlatch ($unlatch_value) for 1s, max_cols=$max_cols, unlatch_bias_mode=$unlatch_bias_mode, no tile heater"
-    bias_tess $unlatch_bias_args
-fi
+# if [ "$unlatch_bias_mode" = "manual" ]; then
+#     echo "unlatch (manual) for 30s, no tile heater"
+#     # Edit the line below to set manual bias values:
+#     #             0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
+#     bias_tess 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535 65535
+# else
+#     unlatch_bias_args=""
+#     for ((i=0; i<max_cols; i++)); do
+#         if [ "$unlatch_bias_mode" = "half" ] && [ $i -ge $((max_cols / 2)) ]; then
+#             unlatch_bias_args="$unlatch_bias_args 0"
+#         else
+#             unlatch_bias_args="$unlatch_bias_args $unlatch_value"
+#         fi
+#     done
+#     echo "unlatch ($unlatch_value) for 30s, max_cols=$max_cols, unlatch_bias_mode=$unlatch_bias_mode, no tile heater"
+#     bias_tess $unlatch_bias_args
+# fi
+# Latching skipped here because detectors will be latched prior to this script being run, and we want to start from high bias and step down.
 sleep 1
 
 prev_bias=""
@@ -222,10 +229,10 @@ while IFS=' ' read -r tbias row cols; do
             mkdir $MAS_DATA/$dir
         fi
 
-        echo "bias and settle for 30s"
+        echo "bias and settle for 20s"
         bias_args=""
         for ((i=0; i<16; i++)); do
-            if [ -n "${bias_cols[$tbias,$i]}" ]; then
+            if [ -n "${bias_col_set[$i]}" ]; then
                 bias_args="$bias_args $tbias"
             else
                 bias_args="$bias_args 0"
@@ -233,7 +240,7 @@ while IFS=' ' read -r tbias row cols; do
         done
         bias_tess $bias_args
 
-        sleep 30
+        sleep 20
 
         prev_bias="$tbias"
         prev_row=""  # force row setup on bias change
@@ -252,7 +259,7 @@ while IFS=' ' read -r tbias row cols; do
         mce_reconfig  # get back to normal state to freeze the servo
         sleep 1
 
-        python $FREEZE_SCRIPT --row $row sq1
+        python $FREEZE_SCRIPT --row $row --keep-tes-bias sq1
 
         sleep 2
         fb_val=(`command_reply rb sq1 fb_const`)
