@@ -46,6 +46,10 @@ o.add_option('--frames', default=30, type=int)
 o.add_option('--no-reinit', action='store_true',
              help="for tes and sq1 stages, do not re-init the servo before "
              "measuring the locking feedback.")
+o.add_option('--keep-tes-bias', action='store_true', default=False,
+             help="for the sq1 stage, do not zero tes bias. Use this when "
+             "the caller wants to hold a nonzero tes bias across the freeze "
+             "(e.g. superfast noise acquisition at a fixed bias point).")
 o.add_option('--sq1lock', default='up', type="choice", 
              choices=('up', 'dn'),
              help="which SQ1 lock point to use for the locking feedback: 'up' or 'dn'.  Default is 'up'.")
@@ -93,7 +97,8 @@ if opts.reconfig:
 mce = mce_control()
 
 if stage == 'sq1':
-    read_and_zero(mce, 'tes', 'bias')
+    if not opts.keep_tes_bias:
+        read_and_zero(mce, 'tes', 'bias')
 
 if stage in ['sq1', 'tes']:
     # Re-lock
