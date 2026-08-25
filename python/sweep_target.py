@@ -142,4 +142,4 @@ print 'reconfig...'
 # time.sleep(1)
 # subprocess.call(['mce_make_config', '-x', '-e', exp_file], stdout=open(os.devnull, 'w'))
 # mce.servo_mode(3)
-subprocess.call(['auto_setup'])
+subprocess.call(['mce_reconfig'])
