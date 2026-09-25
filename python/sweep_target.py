@@ -11,7 +11,7 @@ import auto_setup as ast
 
 _SAB = {
     'range': range(-100,100,10),
-    'nframes': 1000,
+    'nframes': 200,
     'card': 'sa',
     'param': 'bias',
 }
@@ -23,12 +23,12 @@ _SAFB= {
 }
 _SQ1B= {
     'range': range(-100,100,10),
-    'nframes': 1000,
+    'nframes': 200,
     'card': 'sq1',
     'param': 'bias',
 }
 _SQ1FB= {
-    'range': range(-2500,2501,250),
+    'range': range(-2500,2501,100),
     'nframes': 30,
     'card': 'sq1',
     'param': 'fb_const',
@@ -57,6 +57,11 @@ from optparse import OptionParser
 o = OptionParser(usage=USAGE)
 o.add_option('--config', default=None, type=str,
              help="tune config file.  If not provided, will use the default config file for the current setup.")
+o.add_option('--ac2-cs', default=None, type=int,
+             help="specify the ac2 chip-select address to hold on (for "
+             "two-level addressing).  Passed through to "
+             "mce_freeze_servo_mux11d.py; required there when "
+             "config_two_level is set and a row is given.")
 opts, args = o.parse_args()
 
 SWEEP_TARGET = ['sab', 'safb', 'sq1b', 'sq1fb']
@@ -100,7 +105,10 @@ fname_ystd = os.path.join(dirname, 'openloop_ramp_data_std')
 ### Freeze servo
 freeze_cmd = ['python', 'mce_freeze_servo_mux11d.py', card]
 if row is not None:
+    freeze_cmd += ['--keep-tes-bias']
     freeze_cmd += ['--row', str(row)]
+    if opts.ac2_cs is not None:
+        freeze_cmd += ['--ac2-cs', str(opts.ac2_cs)]
 subprocess.call(freeze_cmd)
 
 orig = subprocess.Popen(["mce_cmd","-x","rb",card,param],stdout=subprocess.PIPE).communicate()[0].strip()
@@ -142,4 +150,6 @@ print 'reconfig...'
 # time.sleep(1)
 # subprocess.call(['mce_make_config', '-x', '-e', exp_file], stdout=open(os.devnull, 'w'))
 # mce.servo_mode(3)
+subprocess.call(['mce_zero_bias'], stdout=open(os.devnull, 'w'))
+time.sleep(1)
 subprocess.call(['mce_reconfig'])
