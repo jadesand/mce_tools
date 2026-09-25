@@ -29,7 +29,7 @@ def main():
   rows = np.zeros((16,41),dtype=np.int)
   cols = np.zeros((16,41),dtype=np.int)
 
-  for col in [0, 1, 2, 3, 4, 6, 7, 11, 12, 14, 15]:
+  for col in [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
     print col,
     for row in range(0, 41):
       sys.stdout.flush()
