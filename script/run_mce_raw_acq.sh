@@ -8,16 +8,17 @@ MCE_TOOLS=$(dirname "$SCRIPT_DIR")
 FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
 ndatasets=1
-columns=(0 1 2 3 4 5 6 7)
-rcs=(1 2)
+columns=(0 1 2 3)
+rcs=(1)
 # columns=(0 1)
 # rcs=(1)
 nsamples=""
 freeze_stage=""
 row=0
+ac2_cs=""
 
-opts=$(getopt -o n:c:R:s:f:r: \
-    --long ndatasets:,col:,rcs:,nsamples:,freeze-stage:,row: \
+opts=$(getopt -o n:c:R:s:f:r:a: \
+    --long ndatasets:,col:,rcs:,nsamples:,freeze-stage:,row:,ac2-cs: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -30,6 +31,7 @@ while true; do
         -s|--nsamples)      nsamples="$2"; shift 2 ;;
         -f|--freeze-stage)  freeze_stage="$2"; shift 2 ;;
         -r|--row)           row="$2"; shift 2 ;;
+        -a|--ac2-cs)        ac2_cs="$2"; shift 2 ;;
         --)                 shift; break ;;
         *)                  echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -65,7 +67,15 @@ do
             auto_setup --rc=$rc
         fi
         sleep 1
-        python "$FREEZE_SCRIPT" --row "$row" $freeze_stage
+        
+        freeze_args=(--row "$row")
+        if [[ -n "$ac2_cs" ]]; then
+            freeze_args+=(--ac2-cs "$ac2_cs")
+        fi
+        freeze_args+=(--keep-tes-bias)
+
+        echo "python $FREEZE_SCRIPT ${freeze_args[@]} $freeze_stage"
+        python "$FREEZE_SCRIPT" "${freeze_args[@]}" $freeze_stage
     fi
     
     for idx in `seq 1 ${ndatasets}`;
