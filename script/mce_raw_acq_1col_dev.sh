@@ -109,17 +109,20 @@ mce_cmd -q \
     -X "wb rc$rc_cmd readout_col_index $column" \
     -X "sleep 100000"
 
-# Auto-compute n_samples as the largest multiple of lcm(frame_size, row_len)
+# Auto-compute n_samples as the largest multiple of lcm(frame_size, mux_cycle)
 # that fits in the 65536-sample hardware buffer, so we never read sentinel
-# values (0x80000000) and every dataset ends on a complete row boundary.
+# values (0x80000000) and every dataset ends on a complete row-mux cycle
+# (mux_cycle = row_len * num_rows_rep: the number of samples, per column,
+# in one full pass through all rows).
 if [ "$change_num_rows" == "1" ]; then
     frame_size=$(( num_cols_rep * num_rows_rep ))
     row_len_val=`command_reply rb cc row_len`
-    a=$frame_size; b=$row_len_val
+    mux_cycle=$(( row_len_val * num_rows_rep ))
+    a=$frame_size; b=$mux_cycle
     while [ "$b" -ne 0 ]; do t=$(( a % b )); a=$b; b=$t; done
-    lcm=$(( frame_size * row_len_val / a ))
+    lcm=$(( frame_size * mux_cycle / a ))
     n_samples=$(( (65536 / lcm) * lcm ))
-    echo "Auto n_samples=$n_samples (frame_size=$frame_size, row_len=$row_len_val, lcm=$lcm)"
+    echo "Auto n_samples=$n_samples (frame_size=$frame_size, row_len=$row_len_val, mux_cycle=$mux_cycle, lcm=$lcm)"
 fi
 
 # Round to nearest complete readout frame
