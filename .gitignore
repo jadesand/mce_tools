@@ -1,6 +1,7 @@
 # User specified files
 *.txt
 */dev.txt
+script/multitask.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
