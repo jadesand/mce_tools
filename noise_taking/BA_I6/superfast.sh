@@ -12,6 +12,8 @@
 # setup, so it stays here rather than being pushed onto the caller.
 #
 # RS - 2026-08-19 split out of noise_superfast_ba_i6.sh
+# RS - 2026-08-25 card1/card2/period/stepsize are now getopt options instead
+#      of hardcoded values
 #
 # Usage: superfast.sh [OPTIONS]
 #   -d, --dir DIR              output directory to write into, relative to $MAS_DATA;
@@ -28,6 +30,14 @@
 #   -n, --nsamp N               total samples to divide across rows/cols for the main
 #                                acquisition (sampint = nsamp / ccnumrows / ccnumcols;
 #                                default: 4000000)
+#   --card1 N                  physical card rc1 fb_const is mapped to, per
+#                                mce_status -g (default: 3)
+#   --card2 N                  physical card rc2 fb_const is mapped to, per
+#                                mce_status -g (default: 4)
+#   --period N                  fb_const square-wave half-period, in the units
+#                                acq_go takes; minimum is 8000/max_rows (default: 50)
+#   --stepsize N                fb_const square-wave step size around the locking
+#                                feedback (min +/- stepsize); keep it linear (default: 50)
 
 source $MAS_SCRIPT/mas_library.bash
 
@@ -35,6 +45,13 @@ SCRIPT_NAME=$(basename "$0")
 SCRIPT_NAME_NO_EXT="${SCRIPT_NAME%.*}"
 SCRIPT_FULL_PATH=$(readlink -f "$0")
 SCRIPT_DIR=$(dirname "$SCRIPT_FULL_PATH")
+
+# MCE_TOOLS is normally exported by ~/.bashrc; fall back to deriving it
+# from this script's own location if it isn't set (e.g. invoked over a
+# non-interactive SSH session that never sourced .bashrc's interactive-only
+# export). This script always lives at mce_tools/noise_taking/<module>/, so
+# two levels up from SCRIPT_DIR is mce_tools/ regardless of checkout path.
+MCE_TOOLS="${MCE_TOOLS:-$(dirname "$(dirname "$SCRIPT_DIR")")}"
 
 FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
@@ -47,9 +64,13 @@ run="0"
 overwrite="false"
 channel_list="$SCRIPT_DIR/superfast_channel_list.txt"
 nsamp=4000000
+card1=3
+card2=4
+period=50
+stepsize=50
 
 opts=$(getopt -o d:R:c:n: \
-    --long dir:,run:,overwrite,channel-list:,nsamp: \
+    --long dir:,run:,overwrite,channel-list:,nsamp:,card1:,card2:,period:,stepsize: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -61,6 +82,10 @@ while true; do
         --overwrite)         overwrite="true"; shift ;;
         -c|--channel-list)   channel_list="$2"; shift 2 ;;
         -n|--nsamp)          nsamp="$2"; shift 2 ;;
+        --card1)             card1="$2"; shift 2 ;;
+        --card2)             card2="$2"; shift 2 ;;
+        --period)            period="$2"; shift 2 ;;
+        --stepsize)          stepsize="$2"; shift 2 ;;
         --)                  shift; break ;;
         *)                   echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -140,12 +165,9 @@ sampledly=$(( $row_len-$samplenum ))
 
 #############################################################
 # FB_CONST SQRWAVE SET UP --> set up the fb_const squrewave #
+# (card1, card2, period, stepsize are set from --card1/--card2/--period/
+# --stepsize above)
 #############################################################
-
-card1=3              #where rc1 fb_const is physically mapped per mce_status -g
-card2=4              #where rc2 fb_const is physically mapped per mce_status -g
-period=50            #min is 8000/41=195
-stepsize=50          #10 is good, keep it linear
 
 # Parameters for 10 kHz acquisition during fb_const square wave calibration
 fast_ccnumrows=1
@@ -182,6 +204,10 @@ while IFS=' ' read -r row cols; do
     sleep 1
 
     python $FREEZE_SCRIPT --row $row --keep-tes-bias sq1
+    if [ $? -ne 0 ]; then
+        echo "Error: $FREEZE_SCRIPT failed for row=$row -- aborting" >&2
+        exit 1
+    fi
 
     sleep 2
     fb_val=(`command_reply rb sq1 fb_const`)
