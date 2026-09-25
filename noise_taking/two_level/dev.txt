@@ -1,4 +1,0 @@
-# Channel list for superfast noise acquisition
-# Format: CS row col1,col2,...
-CS0 0 12
-CS0 1 12
