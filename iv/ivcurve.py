@@ -10,6 +10,7 @@ import numpy as np
 from pymce import MCE
 
 DEBUG = False
+CLAMP_FACTOR = 0.9   # fb limit = CLAMP_FACTOR*127*Q_min  (~114 phi0)
 
 class MCEWrap():
 	def __init__(self):
@@ -22,6 +23,32 @@ class MCEWrap():
 		print "wb %s %s %s"%(x,y,str(v))
 		if not DEBUG:
 			self.m.write(x,y,v)
+
+# def set_integral_clamp(m, rcs=(3, 4)):
+#     '''
+#     Set integral_clamp on each readout card so a runaway row freezes at
+#     ~CLAMP_FACTOR*127 phi0 (below the flux-jump counter limit of 127).
+#       clamp = CLAMP_FACTOR * 127 * 4096 * Q_min / |I|_max
+#     pymce returns register values as unsigned 32-bit, so gains are
+#     converted back to signed before taking |I|.
+#     '''
+#     for rc in rcs:
+#         card = 'rc%d' % rc
+#         gains, quanta = [], []
+#         for ch in range(8):
+#             g = np.array(m.read(card, 'gaini%d' % ch), dtype=np.int64)   # changed
+#             g[g >= 2**31] -= 2**32                                        # unsigned -> signed
+#             q = np.array(m.read(card, 'flx_quanta%d' % ch), dtype=np.int64)
+#             on = (g != 0)
+#             gains += list(np.abs(g[on]))
+#             quanta += list(q[on & (q > 0)])
+#         clamp = 0
+#         if gains and quanta:
+#             clamp = int(CLAMP_FACTOR * 127 * 4096 * min(quanta) / max(gains))
+#         clamp = min(clamp, 2**31 - 1)
+#         print "integral_clamp %s: Q_min=%d |I|_max=%d -> clamp=%d" % (card, min(quanta) if quanta else 0, max(gains) if gains else 0, clamp)
+#         m.write(card, 'integral_clamp', [clamp])
+
 
 def main():
 	parser = argparse.ArgumentParser()
@@ -37,6 +64,7 @@ def main():
 	parser.add_argument('--bias_pause',type=float,default=0.1)
 	parser.add_argument('--bias_final',type=int,default=0)
 	parser.add_argument('--data_mode',type=int,default=1)
+	parser.add_argument('--relock',action='store_true',help='relock (flx_lp_init) after every bias step')
 	args = parser.parse_args()
 
 
@@ -53,6 +81,7 @@ def main():
 	bias_pause = args.bias_pause
 	bias_final = args.bias_final
 	data_mode = args.data_mode
+	relock = args.relock
 
 	#m = MCE()
 	m = MCEWrap()
@@ -80,11 +109,13 @@ def main():
 	print>>f,"bias_pause=",bias_pause
 	print>>f,"bias_final=",bias_final
 	print>>f,"data_mode=",data_mode
+	print>>f,"relock=",relock
 	f.close()
 
 	print "Setting up MCE mode"
 	m.write('rca','data_mode',data_mode)
 	m.write('rca','en_fb_jump',1)
+	# set_integral_clamp(m, rcs=(3, 4))
 	m.write('rca','flx_lp_init',1)
 
 	ncol = len(m.read('tes','bias'))
@@ -127,6 +158,10 @@ def main():
 		print>>biasf,bias
 		bias_str = ' '.join([str(x) for x in bias*bias_mask])
 		print>>b,'wb tes bias '+bias_str
+		if relock:
+			print>>b,'sleep %d'%(5000)
+			print>>b,'wb rca flx_lp_init 1'
+			print>>b,'sleep %d'%(5000)
 		print>>b,'sleep %d'%(bias_pause*1e6)
 		print>>b,'acq_go 1'
 
@@ -140,6 +175,8 @@ def main():
 	print "ramp finished in %.2f seconds"%(t1-t0)
 
 	m.write('tes','bias',bias_mask*bias_final)
+	# for rc in (3, 4):
+	# 	m.write('rc%d' % rc, 'integral_clamp', [0])
 	m.write('rca','flx_lp_init',1)
 
 	
