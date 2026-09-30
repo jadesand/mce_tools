@@ -8,17 +8,16 @@ MCE_TOOLS=$(dirname "$SCRIPT_DIR")
 FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 
 ndatasets=1
-columns=(0 1 2 3)
-rcs=(1)
-# columns=(0 1)
-# rcs=(1)
+# global columns 0..31; rc = col/8 + 1, local col = col%8
+# global_columns=(17 18 19 20 21 22 23 25 26 27)   # rc3 + rc4
+global_columns=(17 18 19 21 22 23 25 27)   # rc3 + rc4
 nsamples=""
 freeze_stage=""
 row=0
 ac2_cs=""
 
-opts=$(getopt -o n:c:R:s:f:r:a: \
-    --long ndatasets:,col:,rcs:,nsamples:,freeze-stage:,row:,ac2-cs: \
+opts=$(getopt -o n:c:s:f:r:a: \
+    --long ndatasets:,col:,nsamples:,freeze-stage:,row:,ac2-cs: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -26,8 +25,7 @@ eval set -- "$opts"
 while true; do
     case "$1" in
         -n|--ndatasets)     ndatasets="$2"; shift 2 ;;
-        -c|--col)           IFS=',' read -r -a columns <<< "$2"; shift 2 ;;
-        -R|--rcs)           IFS=',' read -r -a rcs     <<< "$2"; shift 2 ;;
+        -c|--col)           IFS=',' read -r -a global_columns <<< "$2"; shift 2 ;;
         -s|--nsamples)      nsamples="$2"; shift 2 ;;
         -f|--freeze-stage)  freeze_stage="$2"; shift 2 ;;
         -r|--row)           row="$2"; shift 2 ;;
@@ -36,6 +34,16 @@ while true; do
         *)                  echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+for gcol in "${global_columns[@]}"; do
+    if ! [[ "$gcol" =~ ^[0-9]+$ ]] || (( gcol > 31 )); then
+        echo "Invalid column '$gcol': must be an integer in 0..31"; exit 1
+    fi
+done
+global_columns=($(printf '%s\n' "${global_columns[@]}" | sort -n -u))
+
+# unique rcs, in order, derived from the global columns
+rcs=($(for gcol in "${global_columns[@]}"; do echo $(( gcol / 8 + 1 )); done | uniq))
 
 CTIME_FOR_LOGFILE=$(date +%s)
 dirname=raw_${CTIME_FOR_LOGFILE}
@@ -46,13 +54,19 @@ exec > >(tee "$MAS_DATA/$dirname/${dirname}.out") 2>&1
 LOGFILE=$MAS_DATA/$dirname/log.txt
 echo "OUTFILE=${LOGFILE}"
 
-echo "columns=(${columns[@]})"
+echo "global_columns=(${global_columns[@]})"
 echo "rcs=(${rcs[@]})"
 
 # log header
 echo -e "tune\trc_fpga_temp\trc_card_temp\trc_card_id\trc_card_type\trc_slot_id\trc_fw_rev\trc\tcol\tdatedir\tdata">>${LOGFILE}
 for rc in "${rcs[@]}";
 do
+    # local (0..7) columns on this rc
+    columns=($(for gcol in "${global_columns[@]}"; do
+        (( gcol / 8 + 1 == rc )) && echo $(( gcol % 8 ))
+    done))
+    echo "rc${rc}: columns=(${columns[@]})"
+
     MCE_OUTPUT=$(mce_status -s)
     CARD_ID=`echo "$MCE_OUTPUT" | grep rc${rc} | grep card_id | awk '{print $4}'`
     CARD_TYPE=`echo "$MCE_OUTPUT" | grep rc${rc} | grep card_type | awk '{print $4}'`
