@@ -26,12 +26,14 @@ def main():
   nr,nc,nt = y.shape
   print(nc)
   print(nr)
-  rows = np.zeros((16,41),dtype=np.int)
-  cols = np.zeros((16,41),dtype=np.int)
+  rows = np.zeros((32,22),dtype=np.int)
+  cols = np.zeros((32,22),dtype=np.int)
 
-  for col in [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+  for col in [17, 18, 19, 21, 22, 23, 25, 27]:
+  # for col in [18]:
+  # for col in [17, 18]:
     print col,
-    for row in range(0, 41):
+    for row in range(0, 22):
       sys.stdout.flush()
       plt.clf()
       plt.title('Column %02d'%col)
