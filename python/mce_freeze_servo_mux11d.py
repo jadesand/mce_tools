@@ -71,9 +71,12 @@ stage = args[0]
 if stage in ['sq1','tes'] and opts.row is None:
     o.error("The %s stage requires a --row argument." % stage)
 
-is_two_level = int(subprocess.Popen(
+# config_two_level is absent from experiment.cfg on one-level setups;
+# mas_param then prints nothing on stdout, so default to one-level.
+two_level_out = subprocess.Popen(
     ["mas_param", "get", "config_two_level"],
-    stdout=subprocess.PIPE).communicate()[0].split()[0])
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0].split()
+is_two_level = int(two_level_out[0]) if two_level_out else 0
 if stage in ['sq1','tes'] and is_two_level and opts.ac2_cs is None:
     o.error("The %s stage requires a --ac2-cs argument when "
             "config_two_level is set." % stage)
