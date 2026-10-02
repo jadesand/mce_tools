@@ -141,14 +141,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("-c", "--channels", nargs='+', required=True,
                          help="channels to use, as rxxcxx (space-separated)")
-    parser.add_argument("-t", "--sq1-ramp-dir", required=True,
+    parser.add_argument("-r", "--sq1-ramp-dir", required=True,
                          help="path to the tuning directory for sq1_ramp stage")
-    parser.add_argument("-T", "--sq1-ramp-tes-dir", default=None,
+    parser.add_argument("-t", "--sq1-ramp-tes-dir", default=None,
                          help="path to the tuning directory for sq1_ramp_tes stage "
                               "(default: same as --sq1-ramp-dir)")
-    parser.add_argument("--m-sq1in-ph", type=float, default=683.3,
+    parser.add_argument("-i", "--m-sq1in-ph", type=float, default=683.3,
                          help="M_SQ1IN mutual inductance in pH (default: 683.3)")
-    parser.add_argument("--m-sq1fb-ph", type=float, default=29.0,
+    parser.add_argument("-f", "--m-sq1fb-ph", type=float, default=29.0,
                          help="M_SQ1FB mutual inductance in pH (default: 29)")
     args = parser.parse_args()
 
