@@ -14,6 +14,8 @@
 # RS - 2026-08-19 split out of noise_superfast_ba_i6.sh
 # RS - 2026-08-25 card1/card2/period/stepsize are now getopt options instead
 #      of hardcoded values
+# RS - 2026-09-26 map columns onto all 4 readout cards (rc = col/8+1,
+#      readout_col_index = col%8); dropped unused --card1/--card2
 #
 # Usage: superfast.sh [OPTIONS]
 #   -d, --dir DIR              output directory to write into, relative to $MAS_DATA;
@@ -30,10 +32,6 @@
 #   -n, --nsamp N               total samples to divide across rows/cols for the main
 #                                acquisition (sampint = nsamp / ccnumrows / ccnumcols;
 #                                default: 4000000)
-#   --card1 N                  physical card rc1 fb_const is mapped to, per
-#                                mce_status -g (default: 3)
-#   --card2 N                  physical card rc2 fb_const is mapped to, per
-#                                mce_status -g (default: 4)
 #   --period N                  fb_const square-wave half-period, in the units
 #                                acq_go takes; minimum is 8000/max_rows (default: 50)
 #   --stepsize N                fb_const square-wave step size around the locking
@@ -64,13 +62,11 @@ run="0"
 overwrite="false"
 channel_list="$SCRIPT_DIR/superfast_channel_list.txt"
 nsamp=4030000
-card1=3
-card2=4
 period=50
 stepsize=50
 
 opts=$(getopt -o d:R:c:n: \
-    --long dir:,run:,overwrite,channel-list:,nsamp:,card1:,card2:,period:,stepsize: \
+    --long dir:,run:,overwrite,channel-list:,nsamp:,period:,stepsize: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -82,8 +78,6 @@ while true; do
         --overwrite)         overwrite="true"; shift ;;
         -c|--channel-list)   channel_list="$2"; shift 2 ;;
         -n|--nsamp)          nsamp="$2"; shift 2 ;;
-        --card1)             card1="$2"; shift 2 ;;
-        --card2)             card2="$2"; shift 2 ;;
         --period)            period="$2"; shift 2 ;;
         --stepsize)          stepsize="$2"; shift 2 ;;
         --)                  shift; break ;;
@@ -238,13 +232,14 @@ while IFS=' ' read -r row cs cols; do
     IFS=',' read -ra col_arr <<< "$cols"
     for col in "${col_arr[@]}"; do
         echo 'col='$col
-        if [ $col -lt 8 ]; then
-            rc=1
-            card=$card1        # set up for the fb_const sqrwave
-        else
-            rc=2
-            card=$card2        # set up for the fb_const sqrwave
+        if [ $col -lt 0 ] || [ $col -ge 32 ]; then
+            echo "Error: column $col in $channel_list is outside 0-31 -- aborting" >&2
+            exit 1
         fi
+        # 4 readout cards x 8 columns: global col -> rc (1-4) and the
+        # card-local column index (0-7) that readout_col_index expects
+        rc=$(( $col / 8 + 1 ))
+        rc_col=$(( $col % 8 ))
 
         ####################################################################
         # take super-fast noise timestreams: 400kHz, sampling channel of interest (rectangle + raw mode)
@@ -260,7 +255,7 @@ while IFS=' ' read -r row cs cols; do
         echo "wb cc num_rows_reported "$ccnumrows >> $script
         echo "wb cc num_cols_reported "$ccnumcols >> $script
         echo "wb cc data_rate "$datarate >> $script
-        echo "wb rca readout_col_index "$col >> $script
+        echo "wb rca readout_col_index "$rc_col >> $script
 
         echo "sleep 10" >> $script  # mce_cmd sleep <microseconds>
 

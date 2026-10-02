@@ -10,7 +10,8 @@ FREEZE_SCRIPT="$MCE_TOOLS/python/mce_freeze_servo_mux11d.py"
 ndatasets=1
 # global columns 0..31; rc = col/8 + 1, local col = col%8
 # global_columns=(17 18 19 20 21 22 23 25 26 27)   # rc3 + rc4
-global_columns=(17 18 19 21 22 23 25 27)   # rc3 + rc4
+# global_columns=(17 18 19 21 22 23 25 27)   # rc3 + rc4
+global_columns=(0 1 2 3)
 nsamples=""
 freeze_stage=""
 row=0
