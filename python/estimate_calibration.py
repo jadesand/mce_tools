@@ -87,19 +87,15 @@ def median(vals):
     return (s[n // 2 - 1] + s[n // 2]) / 2.0
 
 
-def estimate_calibration(channels, sq1_ramp_ctime, sq1_ramp_tes_ctime,
+def estimate_calibration(channels, sq1_ramp_dir, sq1_ramp_tes_dir,
                           m_sq1in_ph=683.3, m_sq1fb_ph=29.0):
     """
     Compute tesb_dac_to_uA, sq1fb_dac_to_uA, sq1fb_dac_to_tes_uA for the given
-    channels and tune ctimes.
+    channels and tune directories.
 
     Returns a dict with keys: tesb_dac_to_uA, sq1fb_dac_to_uA,
     sq1fb_dac_to_tes_uA, sq1fb_quantum_dac, tes_quantum_dac.
     """
-    mas_data = os.environ['MAS_DATA']
-    sq1_ramp_dir = os.path.join(mas_data, sq1_ramp_ctime)
-    sq1_ramp_tes_dir = os.path.join(mas_data, sq1_ramp_tes_ctime)
-
     print("Running measure_quanta.py for sq1_ramp (%s)..." % sq1_ramp_dir)
     sq1_ramp_out = run_measure_quanta(sq1_ramp_dir, 'sq1_ramp')
 
@@ -145,21 +141,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("-c", "--channels", nargs='+', required=True,
                          help="channels to use, as rxxcxx (space-separated)")
-    parser.add_argument("-t", "--sq1-ramp-ctime", required=True,
-                         help="tune ctime for sq1_ramp stage")
-    parser.add_argument("-T", "--sq1-ramp-tes-ctime", default=None,
-                         help="tune ctime for sq1_ramp_tes stage "
-                              "(default: same as --sq1-ramp-ctime)")
+    parser.add_argument("-t", "--sq1-ramp-dir", required=True,
+                         help="path to the tuning directory for sq1_ramp stage")
+    parser.add_argument("-T", "--sq1-ramp-tes-dir", default=None,
+                         help="path to the tuning directory for sq1_ramp_tes stage "
+                              "(default: same as --sq1-ramp-dir)")
     parser.add_argument("--m-sq1in-ph", type=float, default=683.3,
                          help="M_SQ1IN mutual inductance in pH (default: 683.3)")
     parser.add_argument("--m-sq1fb-ph", type=float, default=29.0,
                          help="M_SQ1FB mutual inductance in pH (default: 29)")
     args = parser.parse_args()
 
-    sq1_ramp_tes_ctime = args.sq1_ramp_tes_ctime or args.sq1_ramp_ctime
+    sq1_ramp_tes_dir = args.sq1_ramp_tes_dir or args.sq1_ramp_dir
 
     result = estimate_calibration(
-        args.channels, args.sq1_ramp_ctime, sq1_ramp_tes_ctime,
+        args.channels, args.sq1_ramp_dir, sq1_ramp_tes_dir,
         args.m_sq1in_ph, args.m_sq1fb_ph)
 
     print("")
