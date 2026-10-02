@@ -121,7 +121,7 @@ def estimate_calibration(channels, sq1_ramp_dir, sq1_ramp_tes_dir,
 
     tesb_dac_to_uA = FLUX_QUANTUM_WB / (m_sq1in_ph * 1e-12) / tes_quantum_dac * 1e6
     sq1fb_dac_to_uA = FLUX_QUANTUM_WB / (m_sq1fb_ph * 1e-12) / sq1fb_quantum_dac * 1e6
-    sq1fb_dac_to_tes_uA = sq1fb_dac_to_uA / (m_sq1fb_ph / m_sq1in_ph)
+    sq1fb_dac_to_tes_uA = sq1fb_dac_to_uA * (m_sq1fb_ph / m_sq1in_ph)
 
     return {
         'sq1fb_quantum_dac': sq1fb_quantum_dac,
