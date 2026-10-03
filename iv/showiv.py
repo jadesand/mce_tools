@@ -152,8 +152,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('folder')
     parser.add_argument('-r', '--nrow', type=int, required=True)
-    parser.add_argument('-n', '--ncol', type=int, required=True)
-    parser.add_argument('-c', '--columns', type=int, nargs='+',
+    parser.add_argument('-c', '--ncol', type=int, required=True)
+    parser.add_argument('--columns', type=int, nargs='+',
                          help='columns to plot (default: all columns, 0..ncol-1)')
     parser.add_argument('-l', '--relock', action='store_true',
                          help='unwrap curves taken with relock (flx_lp_init) after every bias step')
