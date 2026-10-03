@@ -3,6 +3,7 @@
 */dev.txt
 script/multitask.sh
 dev/
+config/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
