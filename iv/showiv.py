@@ -138,6 +138,10 @@ def load_dead_mask_for_array(array_id, nrow, ncol):
     Load and OR together all dead_list cfg files for the given array_id, from
     $MAS_CONFIG/dead_lists/<array_id>/*.cfg.
 
+    Dead-list cfg files store their mask as (n_rows, n_cols) = (ncol, nrow)
+    (i.e. mask-row indexes detector column, mask-col indexes detector row),
+    so the loaded mask is transposed here to (nrow, ncol) to match y[row, col].
+
     If no cfg files are found for this array_id, prints a warning and returns
     an all-False mask of shape (nrow, ncol) (i.e. no channel is marked dead).
     """
@@ -147,7 +151,7 @@ def load_dead_mask_for_array(array_id, nrow, ncol):
     if not paths:
         print 'no dead_list cfg files found for array_id %r (%s); using all channels' % (array_id, pattern)
         return np.zeros((nrow, ncol), dtype=bool)
-    return load_dead_mask(paths)
+    return load_dead_mask(paths).T
 
 def main():
     parser = argparse.ArgumentParser()
