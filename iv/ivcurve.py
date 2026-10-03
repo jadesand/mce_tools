@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import os,sys
+import os
+import sys
 import argparse
 import time
 
 import numpy as np
-#import pylab as pl
 
 from pymce import MCE
 
@@ -115,6 +115,7 @@ def main():
 	print "Setting up MCE mode"
 	m.write('rca','data_mode',data_mode)
 	m.write('rca','en_fb_jump',1)
+	### set integral clamp, don't recommend unless you know what you're doing
 	# set_integral_clamp(m, rcs=(3, 4))
 	m.write('rca','flx_lp_init',1)
 
@@ -175,6 +176,7 @@ def main():
 	print "ramp finished in %.2f seconds"%(t1-t0)
 
 	m.write('tes','bias',bias_mask*bias_final)
+	### release integral clamp
 	# for rc in (3, 4):
 	# 	m.write('rc%d' % rc, 'integral_clamp', [0])
 	m.write('rca','flx_lp_init',1)
