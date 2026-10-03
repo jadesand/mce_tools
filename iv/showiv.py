@@ -40,12 +40,13 @@ def load_flux_quanta(runfile, nrow, ncol):
     A column/row with no flx_quanta entry (e.g. not present in this run) is 0.
     """
     q = np.zeros((ncol, nrow), dtype=int)
-    nrc = ncol // 8
+    chans_per_card = 8
+    nrc = ncol // chans_per_card
     for rc in range(nrc):
-        for ch in range(ncol):
+        for ch in range(chans_per_card):
             key = ('rc%d' % (rc + 1), 'flx_quanta%d' % ch)
             if key in runfile:
-                q[rc * ncol + ch] = [int(x) for x in runfile[key][:nrow]]
+                q[rc * chans_per_card + ch] = [int(x) for x in runfile[key][:nrow]]
     return q
 
 def load_dead_mask(path, order_by='row'):
