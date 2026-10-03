@@ -93,7 +93,10 @@ def load_dead_mask(path, order_by='row'):
                 % (path, expected, n_rows, n_cols, len(values))
             )
 
-        mask_array = np.array(values, dtype=bool).reshape(n_rows, n_cols)
+        # Despite the names, the file's printed grid has n_cols rows of
+        # n_rows values each (one "/* N */" line per n_cols index), so the
+        # flat value list must be reshaped (n_cols, n_rows), not the reverse.
+        mask_array = np.array(values, dtype=bool).reshape(n_cols, n_rows)
         if mask is None:
             mask = mask_array
         else:
