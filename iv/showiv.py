@@ -153,7 +153,8 @@ def main():
     parser.add_argument('folder')
     parser.add_argument('-r', '--nrow', type=int, required=True)
     parser.add_argument('-n', '--ncol', type=int, required=True)
-    parser.add_argument('-c', '--columns', type=int, nargs='+', required=True)
+    parser.add_argument('-c', '--columns', type=int, nargs='+',
+                         help='columns to plot (default: all columns, 0..ncol-1)')
     parser.add_argument('-l', '--relock', action='store_true',
                          help='unwrap curves taken with relock (flx_lp_init) after every bias step')
     args = parser.parse_args()
@@ -161,7 +162,7 @@ def main():
     folder = args.folder
     nrow = args.nrow
     ncol = args.ncol
-    columns = args.columns
+    columns = args.columns if args.columns is not None else range(ncol)
     relock = args.relock
 
     array_id = get_array_id()

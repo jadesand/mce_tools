@@ -76,6 +76,7 @@ lcprefix="FPU"
 datadir="\$MAS_DATA"
 nrow=22
 ncol=32
+columns=""
 
 # shellcheck disable=SC1090
 source "$config"
@@ -101,10 +102,15 @@ echo "$lcname"
 lcfullpath="$datadir/$lcname"
 lcplots="$lcfullpath/"
 
+columns_arg=""
+if [ -n "$columns" ]; then
+  columns_arg="--columns $columns"
+fi
+
 # Take iv curve
 ./ivcurve.py \
   --dataname "$lcname" \
-  --columns $columns \
+  $columns_arg \
   --bias_start "$bias_start" \
   --bias_step "$bias_step" \
   --bias_count "$bias_count" \
@@ -119,7 +125,7 @@ lcplots="$lcfullpath/"
 
 # Produce plots
 if [ "$savefig" -eq 1 ]; then
-  ./showiv.py "$lcfullpath" --nrow "$nrow" --ncol "$ncol" --columns $columns $relock_arg
+  ./showiv.py "$lcfullpath" --nrow "$nrow" --ncol "$ncol" $columns_arg $relock_arg
 fi
 
 # Show plots
