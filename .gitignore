@@ -1,5 +1,6 @@
 # User specified files
 *.txt
+!noise_taking/template/*
 */dev.txt
 script/multitask.sh
 dev/
