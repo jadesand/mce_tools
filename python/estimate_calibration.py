@@ -22,6 +22,21 @@ STAGE_VARNAME = {
     'sq1_ramp_tes': 'tes_quanta',
 }
 
+# MUX_INDUCTANCE_pH = {
+#     '11':{
+#         'sq1_ramp': 683.3,  # M_SQ1IN in pH
+#         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
+#     },
+#     '21':{
+#         'sq1_ramp': 683.3,  # M_SQ1IN in pH
+#         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
+#     },
+#     '23':{
+#         'sq1_ramp': 683.3,  # M_SQ1IN in pH
+#         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
+#     },
+# }
+
 
 def run_measure_quanta(tuning_dir, stage):
     """Run measure_quanta.py for the given tuning_dir/stage and return stdout."""
