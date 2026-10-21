@@ -17,9 +17,13 @@ mas_param() {
 for bias in $(seq 5000 1000 18000); do
     mce_zero_bias > /dev/null
     sleep 1
+    mas_param set row_len 119
+    mas_param set sample_dly 109
     mas_param set default_servo_i $(printf '30 %.0s' {1..16})
     mas_param set default_sq1_bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
     sleep 1
+    echo "default_servo_i=$(mas_param get row_len)"
+    echo "default_sq1_bias=$(mas_param get sample_dly)"
     echo "default_servo_i=$(mas_param get default_servo_i)"
     echo "default_sq1_bias=$(mas_param get default_sq1_bias)"
     sleep 1
@@ -33,9 +37,13 @@ done
 for bias in $(seq 5000 1000 18000); do
     mce_zero_bias > /dev/null
     sleep 1
+    mas_param set row_len 119
+    mas_param set sample_dly 109
     mas_param set default_servo_i $(printf -- '-30 %.0s' {1..16})
     mas_param set default_sq1_bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias $bias 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
     sleep 1
+    echo "default_servo_i=$(mas_param get row_len)"
+    echo "default_sq1_bias=$(mas_param get sample_dly)"
     echo "default_servo_i=$(mas_param get default_servo_i)"
     echo "default_sq1_bias=$(mas_param get default_sq1_bias)"
     sleep 1
