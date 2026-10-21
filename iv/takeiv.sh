@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 -c|--config <file> [-t|--temp <mK>] [-d|--datamode <mode>] [-r|--run <runN>] [-s|--savefig <0|1>] [-e|--eog] [-l|--relock]"
+  echo "Usage: $0 -c|--config <file> [-t|--temp <mK>] [-d|--datamode <mode>] [-r|--run <runN>] [-s|--savefig <0|1>] [-e|--eog] [-l|--relock <0|1>] [-o|--openloop <0|1>]"
   echo "  -c, --config <file>    config file defining setup params (required)"
   echo "                         looked up in ./config/ if not found as given"
   echo "  -t, --temp <mK>        temperature for reference in mK (overrides config)"
@@ -10,7 +10,8 @@ usage() {
   echo "  -r, --run <runN>       suffix run number, or string (overrides config)"
   echo "  -s, --savefig <0|1>    save lc plots via showiv.py (overrides config)"
   echo "  -e, --eog              show plots after running (eog)"
-  echo "  -l, --relock           relock (flx_lp_init) after every bias step"
+  echo "  -l, --relock <0|1>     relock (flx_lp_init) after every bias step (overrides config)"
+  echo "  -o, --openloop <0|1>   open loop: servo off at fb_const, read error, forces datamode 0 (overrides config)"
   echo "  -h, --help             show this help message"
   exit "${1:-0}"
 }
@@ -22,8 +23,9 @@ runN_override=""
 savefig_override=""
 eog_override=""
 relock_override=""
+openloop_override=""
 
-PARSED=$(getopt -o c:t:d:r:s:elh --long config:,temp:,datamode:,run:,savefig:,eog,relock,help -n "$0" -- "$@") || usage 1
+PARSED=$(getopt -o c:t:d:r:s:el:o:h --long config:,temp:,datamode:,run:,savefig:,eog,relock:,openloop:,help -n "$0" -- "$@") || usage 1
 eval set -- "$PARSED"
 
 while true; do
@@ -41,7 +43,9 @@ while true; do
     -e|--eog)
       eog_override=1; shift ;;
     -l|--relock)
-      relock_override=1; shift ;;
+      relock_override=$2; shift 2 ;;
+    -o|--openloop)
+      openloop_override=$2; shift 2 ;;
     -h|--help)
       usage 0 ;;
     --)
@@ -72,6 +76,8 @@ runN=0
 savefig=1
 eog=0
 relock=0
+openloop=0
+fb_const=0
 lcprefix="FPU"
 datadir="\$MAS_DATA"
 nrow=22
@@ -88,6 +94,17 @@ source "$config"
 [ -n "$savefig_override" ] && savefig=$savefig_override
 [ -n "$eog_override" ] && eog=$eog_override
 [ -n "$relock_override" ] && relock=$relock_override
+[ -n "$openloop_override" ] && openloop=$openloop_override
+
+openloop_arg=""
+if [ "$openloop" -eq 1 ]; then
+  if [ "$relock" -eq 1 ]; then
+    echo "Error: open loop and relock are incompatible" >&2
+    exit 1
+  fi
+  datamode=0
+  openloop_arg="--open_loop --fb_const $fb_const"
+fi
 
 # Resolve datadir (config may reference $MAS_DATA etc. as a literal string)
 datadir=$(eval echo "$datadir")
@@ -97,6 +114,11 @@ relock_arg=""
 if [ "$relock" -eq 1 ]; then
   lcname="${lcname}_relock"
   relock_arg="--relock"
+fi
+showiv_openloop_arg=""
+if [ "$openloop" -eq 1 ]; then
+  lcname="${lcname}_openloop"
+  showiv_openloop_arg="--openloop"
 fi
 echo "$lcname"
 lcfullpath="$datadir/$lcname"
@@ -118,6 +140,7 @@ fi
   --bias_final "$bias_final" \
   --data_mode "$datamode" \
   $relock_arg \
+  $openloop_arg \
   --zap_bias "$zap_bias" \
   --zap_time "$zap_time" \
   --settle_bias "$settle_bias" \
@@ -125,7 +148,7 @@ fi
 
 # Produce plots
 if [ "$savefig" -eq 1 ]; then
-  ./showiv.py "$lcfullpath" --nrow "$nrow" --ncol "$ncol" $columns_arg $relock_arg
+  ./showiv.py "$lcfullpath" --nrow "$nrow" --ncol "$ncol" $columns_arg $relock_arg $showiv_openloop_arg
 fi
 
 # Show plots
