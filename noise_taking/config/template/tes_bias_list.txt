@@ -1,0 +1,16 @@
+# tes_bias sweep list for noise_taking.sh (config: tes_bias_list).
+# Used for whichever noise type (normal/fast/superfast) is run; row/column
+# selection lives separately in each type's own list file
+# (fast_row_list.txt, superfast_channel_list.txt).
+#
+# Line 1: tes_bias values to step through, high to low, space-separated.
+#         Detectors are assumed already unlatched and biased into the
+#         transition before the sweep (by a separate script, or by
+#         noise_taking.sh itself if unlatch_bias is set in noise.cfg); the
+#         sweep steps bias down through these values without landing on
+#         zero until the final entry.
+# Line 2: columns to bias at every tes_bias step, space-separated. This set
+#         is fixed and does NOT vary with tes_bias -- the same columns stay
+#         biased throughout the whole sweep. Must be < n_bias_lines.
+1200 850 670 520 410 320 250 0
+17 18 19 21 22 23 25 27
