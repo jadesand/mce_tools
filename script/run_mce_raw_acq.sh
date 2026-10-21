@@ -12,6 +12,7 @@ ndatasets=1
 # global_columns=(17 18 19 20 21 22 23 25 26 27)   # rc3 + rc4
 # global_columns=(17 18 19 21 22 23 25 27)   # rc3 + rc4
 global_columns=(0 1 2 3 4 5 6 7 8 9 10 11)
+# global_columns=(2 6 9 10)
 nsamples=""
 freeze_stage=""
 row=0
