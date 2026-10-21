@@ -165,6 +165,8 @@ def main():
                          help='columns to plot (default: all columns, 0..ncol-1)')
     parser.add_argument('-l', '--relock', action='store_true',
                          help='unwrap curves taken with relock (flx_lp_init) after every bias step')
+    parser.add_argument('-o', '--openloop', action='store_true',
+                         help='open loop data (error signal): plot raw, no sign flip or unwrapping')
     args = parser.parse_args()
 
     folder = args.folder
@@ -172,6 +174,7 @@ def main():
     ncol = args.ncol
     columns = args.columns if args.columns is not None else range(ncol)
     relock = args.relock
+    openloop = args.openloop
 
     array_id = get_array_id()
     dead_mask = load_dead_mask_for_array(array_id, nrow, ncol)
@@ -186,7 +189,10 @@ def main():
     f = mce_data.MCEFile(fn)
     dname = os.path.split(fn)[0]
     bias = np.loadtxt(biasfn, skiprows=1)
-    y = -1.0 * f.Read(row_col=True, unfilter='DC').data
+    y = f.Read(row_col=True, unfilter='DC').data
+    if not openloop:
+        y = -1.0 * y
+    ylabel = 'SQ1 error (ADC units)' if openloop else 'SQ1FB (arbitrary units)'
 
     nr, nc, nt = y.shape
     print nc
@@ -216,7 +222,7 @@ def main():
 
             fn_s = os.path.join(dname, 'iv_col%02d_row%02d.png' % (col, row))
             plt.xlabel('Bias Current (arbitrary units)')
-            plt.ylabel('SQ1FB (arbitrary units)')
+            plt.ylabel(ylabel)
             plt.grid()
             plt.savefig(fn_s)
 
@@ -230,7 +236,7 @@ def main():
 
         fn_col = os.path.join(dname, 'iv_col%02d_allrows.png' % col)
         plt.xlabel('Bias Current (arbitrary units)')
-        plt.ylabel('SQ1FB (arbitrary units)')
+        plt.ylabel(ylabel)
         plt.grid()
         plt.savefig(fn_col)
 
