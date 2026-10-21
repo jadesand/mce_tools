@@ -65,7 +65,14 @@ def main():
 	parser.add_argument('--bias_final',type=int,default=0)
 	parser.add_argument('--data_mode',type=int,default=1)
 	parser.add_argument('--relock',action='store_true',help='relock (flx_lp_init) after every bias step')
+	parser.add_argument('--open_loop',action='store_true',help='servo off (fb_const), read error (data_mode 0), muxing on; mce_reconfig afterwards')
+	parser.add_argument('--fb_const',type=int,default=0,help='sq1 fb_const for --open_loop (DAC units; -8192 is 0V)')
 	args = parser.parse_args()
+	if args.open_loop and args.relock:
+		parser.error('--open_loop and --relock are incompatible')
+	if args.open_loop and args.data_mode != 0:
+		print "open loop: forcing data_mode 0 (was %d)"%args.data_mode
+		args.data_mode = 0
 
 
 	data_name = args.dataname
@@ -82,6 +89,8 @@ def main():
 	bias_final = args.bias_final
 	data_mode = args.data_mode
 	relock = args.relock
+	open_loop = args.open_loop
+	fb_const = args.fb_const
 
 	#m = MCE()
 	m = MCEWrap()
@@ -110,14 +119,10 @@ def main():
 	print>>f,"bias_final=",bias_final
 	print>>f,"data_mode=",data_mode
 	print>>f,"relock=",relock
+	print>>f,"open_loop=",open_loop
+	if open_loop:
+		print>>f,"fb_const=",fb_const
 	f.close()
-
-	print "Setting up MCE mode"
-	m.write('rca','data_mode',data_mode)
-	m.write('rca','en_fb_jump',1)
-	### set integral clamp, don't recommend unless you know what you're doing
-	# set_integral_clamp(m, rcs=(3, 4))
-	m.write('rca','flx_lp_init',1)
 
 	ncol = len(m.read('tes','bias'))
 	if bias_cols is None:
@@ -130,56 +135,78 @@ def main():
 	runfile = fname + '.run'
 	biasfile = fname + '.bias'
 	logfile = fname + '.log'
-	
-  	os.system('mce_status > '+runfile)
-	os.system('frameacq_stamp %s %s %d >> %s'%('s',fname,bias_count,runfile))
-	biasf = open(biasfile,'w')
-	print>>biasf,"<tes_bias>"
 
-	print "zapping"
-	zap_arr = bias_mask * zap_bias
-	bias_start_arr = bias_mask * bias_start
-	m.write('tes','bias',zap_arr)
-	time.sleep(zap_time)
-	print "settling"
-	m.write('tes','bias',bias_mask*settle_bias)
-	time.sleep(settle_time)
+	try:
+		print "Setting up MCE mode"
+		m.write('rca','data_mode',data_mode)
+		if open_loop:
+			# servo off: hold every column at fb_const, keep muxing on
+			nsq1 = len(m.read('sq1','servo_mode'))
+			m.write('rca','en_fb_jump',0)
+			m.write('sq1','fb_const',[fb_const]*nsq1)
+			m.write('sq1','servo_mode',[1]*nsq1)
+		else:
+			m.write('rca','en_fb_jump',1)
+			### set integral clamp, don't recommend unless you know what you're doing
+			# set_integral_clamp(m, rcs=(3, 4))
+			m.write('rca','flx_lp_init',1)
+
+		os.system('mce_status > '+runfile)
+		os.system('frameacq_stamp %s %s %d >> %s'%('s',fname,bias_count,runfile))
+		biasf = open(biasfile,'w')
+		print>>biasf,"<tes_bias>"
+
+		print "zapping"
+		zap_arr = bias_mask * zap_bias
+		bias_start_arr = bias_mask * bias_start
+		m.write('tes','bias',zap_arr)
+		time.sleep(zap_time)
+		print "settling"
+		m.write('tes','bias',bias_mask*settle_bias)
+		time.sleep(settle_time)
 
 
-	m.write('tes','bias',bias_mask*bias_start)
-	time.sleep(0.1)
-	m.write('rca','flx_lp_init',1)
-	time.sleep(0.1)
+		m.write('tes','bias',bias_mask*bias_start)
+		time.sleep(0.1)
+		if not open_loop:
+			m.write('rca','flx_lp_init',1)
+			time.sleep(0.1)
 
-	bscript = os.path.join(dname,'bias_script.scr')
-	b = open(bscript,'w')
-	print>>b,'acq_config %s rcs'%fname
-	for i in range(bias_count):
-		bias = bias_step*i + bias_start
-		print>>biasf,bias
-		bias_str = ' '.join([str(x) for x in bias*bias_mask])
-		print>>b,'wb tes bias '+bias_str
-		if relock:
-			print>>b,'sleep %d'%(5000)
-			print>>b,'wb rca flx_lp_init 1'
-			print>>b,'sleep %d'%(5000)
-		print>>b,'sleep %d'%(bias_pause*1e6)
-		print>>b,'acq_go 1'
+		bscript = os.path.join(dname,'bias_script.scr')
+		b = open(bscript,'w')
+		print>>b,'acq_config %s rcs'%fname
+		for i in range(bias_count):
+			bias = bias_step*i + bias_start
+			print>>biasf,bias
+			bias_str = ' '.join([str(x) for x in bias*bias_mask])
+			print>>b,'wb tes bias '+bias_str
+			if relock:
+				print>>b,'sleep %d'%(5000)
+				print>>b,'wb rca flx_lp_init 1'
+				print>>b,'sleep %d'%(5000)
+			print>>b,'sleep %d'%(bias_pause*1e6)
+			print>>b,'acq_go 1'
 
-	biasf.close()
-	b.close()
-	t0 = time.time()
-	print "executing bias ramp"
-	if not DEBUG:
-		os.system('mce_cmd -qf '+bscript)
-	t1 = time.time()
-	print "ramp finished in %.2f seconds"%(t1-t0)
-
-	m.write('tes','bias',bias_mask*bias_final)
-	### release integral clamp
-	# for rc in (3, 4):
-	# 	m.write('rc%d' % rc, 'integral_clamp', [0])
-	m.write('rca','flx_lp_init',1)
+		biasf.close()
+		b.close()
+		t0 = time.time()
+		print "executing bias ramp"
+		if not DEBUG:
+			os.system('mce_cmd -qf '+bscript)
+		t1 = time.time()
+		print "ramp finished in %.2f seconds"%(t1-t0)
+	finally:
+		if open_loop:
+			# back to closed loop (servo_mode 3, data_mode etc. from experiment.cfg).
+			# Must come before bias_final: mce_reconfig also rewrites tes bias.
+			print "mce_reconfig"
+			if not DEBUG:
+				os.system('mce_reconfig')
+		m.write('tes','bias',bias_mask*bias_final)
+		### release integral clamp
+		# for rc in (3, 4):
+		# 	m.write('rc%d' % rc, 'integral_clamp', [0])
+		m.write('rca','flx_lp_init',1)
 
 	
 
