@@ -1,10 +1,14 @@
 # User specified files
 *.txt
-!noise_taking/template/*
 */dev.txt
 script/multitask.sh
 dev/
-config/
+# Only track templates in config dirs: iv/config/template.cfg and
+# everything in noise_taking/config/template/ (incl. its .txt lists)
+*/config/*
+!*/config/template.cfg
+!*/config/template/
+!*/config/template/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
