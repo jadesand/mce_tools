@@ -11,20 +11,25 @@ mas_param() {
     fi
 }
 
-sq1bias_list=$(seq 5000 1000 18000)
+sq1bias_list=$(seq 6000 1000 16000)
 row_len=119
 sample_dly=109
-default_servo_i=30
-ncols=16
+# default_servo_i
+dsi1=30
+dsi2=-30
+ncols=16 # MCE columns we are taking data on
 nall_cols=32   # length of default_sq1_bias
-columns=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)   # global columns 0..31
+columns=(2 3 4 8 9 10 11)   # global columns 0..31
 columns_csv=$(IFS=,; echo "${columns[*]}")
 ndpkg=4
 
-# repeat $1 ncols times, space separated
+# 4 args, each repeated for 8 consecutive columns, space separated:
+# $1 -> cols 0-7, $2 -> cols 8-15, $3 -> cols 16-23, $4 -> cols 24-31
 repeat_ncols() {
-    local i
-    for ((i = 0; i < ncols; i++)); do printf '%s ' "$1"; done
+    local v i
+    for v in "$1" "$2" "$3" "$4"; do
+        for ((i = 0; i < 8; i++)); do printf '%s ' "$v"; done
+    done
 }
 
 # default_sq1_bias list: $1 at the global columns listed in $columns, 0 elsewhere
@@ -47,11 +52,11 @@ for bias in $sq1bias_list; do
     sleep 1
     mas_param set row_len ${row_len}
     mas_param set sample_dly ${sample_dly}
-    mas_param set default_servo_i $(repeat_ncols ${default_servo_i})
+    mas_param set default_servo_i $(repeat_ncols ${dsi1} ${dsi2} ${dsi2} ${dsi2})
     mas_param set default_sq1_bias $(sq1_bias_at_columns $bias)
     sleep 1
-    echo "default_servo_i=$(mas_param get row_len)"
-    echo "default_sq1_bias=$(mas_param get sample_dly)"
+    echo "row_len=$(mas_param get row_len)"
+    echo "sample_dly=$(mas_param get sample_dly)"
     echo "default_servo_i=$(mas_param get default_servo_i)"
     echo "default_sq1_bias=$(mas_param get default_sq1_bias)"
     sleep 1
@@ -67,11 +72,11 @@ for bias in $sq1bias_list; do
     sleep 1
     mas_param set row_len ${row_len}
     mas_param set sample_dly ${sample_dly}
-    mas_param set default_servo_i $(repeat_ncols -${default_servo_i})
+    mas_param set default_servo_i $(repeat_ncols $((-dsi1)) $((-dsi2)) $((-dsi2)) $((-dsi2)))
     mas_param set default_sq1_bias $(sq1_bias_at_columns $bias)
     sleep 1
-    echo "default_servo_i=$(mas_param get row_len)"
-    echo "default_sq1_bias=$(mas_param get sample_dly)"
+    echo "row_len=$(mas_param get row_len)"
+    echo "sample_dly=$(mas_param get sample_dly)"
     echo "default_servo_i=$(mas_param get default_servo_i)"
     echo "default_sq1_bias=$(mas_param get default_sq1_bias)"
     sleep 1
