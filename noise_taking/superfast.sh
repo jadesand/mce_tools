@@ -20,6 +20,7 @@
 #      and --ac2-cs for two-level AC (mux11d) modules (merged in from the
 #      NIST/SLAC copies), so one script serves every module; the master
 #      noise_taking.sh passes these from its config file
+# RS - 2026-10-21 --duration (seconds per channel) instead of --nsamp
 #
 # Usage: superfast.sh [OPTIONS]
 #   -d, --dir DIR              output directory to write into, relative to $MAS_DATA;
@@ -34,9 +35,9 @@
 #                                with optional comment lines starting with #;
 #                                required; noise_taking.sh passes the one from
 #                                its config)
-#   -n, --nsamp N               total samples to divide across rows/cols for the main
-#                                acquisition (sampint = nsamp / ccnumrows / ccnumcols;
-#                                default: 4000000)
+#   -t, --duration SEC          seconds of superfast data per channel (default: 10);
+#                                converted to samples at fs=50e6/(row_len*2), then
+#                                to acq_go frames (sampint = nsamp / ccnumrows / ccnumcols)
 #   --period N                  fb_const square-wave half-period, in the units
 #                                acq_go takes; minimum is 8000/max_rows (default: 50)
 #   --stepsize N                fb_const square-wave step size around the locking
@@ -74,15 +75,15 @@ dir=""
 run="0"
 overwrite="false"
 channel_list=""
-nsamp=4000000
+duration=10
 period=50
 stepsize=50
 row_len=62
 ccnumrows=41
 ac2_cs=0
 
-opts=$(getopt -o d:R:c:n: \
-    --long dir:,run:,overwrite,channel-list:,nsamp:,period:,stepsize:,row-len:,ccnumrows:,ac2-cs: \
+opts=$(getopt -o d:R:c:t: \
+    --long dir:,run:,overwrite,channel-list:,duration:,period:,stepsize:,row-len:,ccnumrows:,ac2-cs: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -93,7 +94,7 @@ while true; do
         -R|--run)            run="$2"; shift 2 ;;
         --overwrite)         overwrite="true"; shift ;;
         -c|--channel-list)   channel_list="$2"; shift 2 ;;
-        -n|--nsamp)          nsamp="$2"; shift 2 ;;
+        -t|--duration)       duration="$2"; shift 2 ;;
         --period)            period="$2"; shift 2 ;;
         --row-len)           row_len="$2"; shift 2 ;;
         --ccnumrows)         ccnumrows="$2"; shift 2 ;;
@@ -167,11 +168,17 @@ channel_entries=$(grep -v '^\s*#' "$channel_list" | grep -v '^\s*$')
 ccnumcols=1
 
 datarate=$(( $ccnumrows * $ccnumcols ))
-#nsamp = ccnumrows * ccnumcols * fs * t_int
-#nsamp = 164000000 # integration time t_int ~ 10s
-
-sampleuse=$((($nsamp)/($ccnumrows)/($ccnumcols) ))
-sampint=$(printf "%.0f\n" "$sampleuse")
+# each acq_go frame carries ccnumrows*ccnumcols consecutive samples, so
+# nsamp = duration*fs samples -> sampint = nsamp/ccnumrows/ccnumcols frames
+# (e.g. 10s at row_len 62: fs=403kHz, nsamp=4032258, sampint=98347)
+read fs nsamp <<< $(awk -v t="$duration" -v r="$row_len" \
+    'BEGIN { fs = 50e6/(r*2); printf "%.0f %d\n", fs, t*fs + 0.5 }')
+sampint=$(( $nsamp / $ccnumrows / $ccnumcols ))
+if [ "$sampint" -lt 1 ]; then
+    echo "Error: duration=$duration too short for row_len=$row_len, ccnumrows=$ccnumrows" >&2
+    exit 1
+fi
+echo "duration=${duration}s per channel at fs=${fs} Hz (row_len=$row_len) -> nsamp=$nsamp, sampint=$sampint frames"
 
 samplenum=`command_reply rb rc1 sample_num`
 sampledly=$(( $row_len-$samplenum ))

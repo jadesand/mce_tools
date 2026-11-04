@@ -16,6 +16,8 @@
 #      (noise_taking_ba_i6.sh), since normal_dm10/normal_dm1/fast all sweep
 #      the same row_len list and setting it three times per row_len was
 #      redundant
+# RS - 2026-10-21 --duration (seconds) instead of --nsamp; the sample count is
+#      computed from num_rows/row_len read off the MCE
 #
 # Usage: fast.sh [OPTIONS]
 #   -d, --dir DIR             output directory to write into, relative to $MAS_DATA;
@@ -31,7 +33,8 @@
 #                                with optional comment lines starting with #
 #                                (required; noise_taking.sh passes the one from
 #                                its config)
-#   -n, --nsamp N              number of samples to acquire per row (default: 204000)
+#   -t, --duration SEC         seconds of data to acquire per row (default: 15);
+#                                converted to samples at fs=50e6/(num_rows*row_len)
 
 source $MAS_SCRIPT/mas_library.bash
 
@@ -49,10 +52,10 @@ run="0"
 overwrite="false"
 rowlen=89
 row_list=""
-nsamp=204000
+duration=15
 
-opts=$(getopt -o d:R:l:r:n: \
-    --long dir:,run:,overwrite,rowlen:,row-list:,nsamp: \
+opts=$(getopt -o d:R:l:r:t: \
+    --long dir:,run:,overwrite,rowlen:,row-list:,duration: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -64,7 +67,7 @@ while true; do
         --overwrite)         overwrite="true"; shift ;;
         -l|--rowlen)         rowlen="$2"; shift 2 ;;
         -r|--row-list)       row_list="$2"; shift 2 ;;
-        -n|--nsamp)          nsamp="$2"; shift 2 ;;
+        -t|--duration)       duration="$2"; shift 2 ;;
         --)                  shift; break ;;
         *)                   echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -146,6 +149,18 @@ done <<< "$rows"
 # loop over the listed rows
 ####################################################################
 
+# convert duration to a sample count at the full frame rate (data_rate 1,
+# set in each fast_row<R>.scr above)
+num_rows=$(command_reply rb sys num_rows | awk '{print $1}')  # one value per card; take the first
+mce_rowlen=$(command_reply rb sys row_len | awk '{print $1}')
+read fs nsamp <<< $(awk -v t="$duration" -v n="$num_rows" -v r="$mce_rowlen" \
+    'BEGIN { fs = 50e6/(n*r); printf "%.2f %d\n", fs, t*fs + 0.5 }')
+if [ -z "$nsamp" ] || [ "$nsamp" -lt 1 ]; then
+    echo "Error: could not compute nsamp (num_rows=$num_rows row_len=$mce_rowlen)" >&2
+    exit 1
+fi
+echo "duration=${duration}s at fs=${fs} Hz (num_rows=$num_rows, row_len=$mce_rowlen) -> nsamp=$nsamp"
+
 echo "taking fast data, row_len=$rowlen"
 
 while IFS=' ' read -r row; do
@@ -153,7 +168,7 @@ while IFS=' ' read -r row; do
     mce_cmd -iqf ${fast_scripts[$row]}
     sleep 1
     fast_filename=$dir'/fast_rowlen'$rowlen'_row'$row
-    mce_run $fast_filename $nsamp s  # this corresponds to t= #samples/fs (sec), fs=50e6/(num_rows*row_len)
+    mce_run $fast_filename $nsamp s  # t = nsamp/fs = duration
     sleep 1
 done <<< "$rows"
 

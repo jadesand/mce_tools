@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Master noise-taking script, config-driven: all module-specific parameters
-# (row count, bias sweep, row_len sweep, nsamp, list files, superfast
+# (row count, bias sweep, row_len sweep, durations, list files, superfast
 # settings) come from a config file (see config/*.cfg), so the same script
 # serves every module. Owns whole-run MCE state (initial reconfig, tes_bias
 # sweep, per-bias-step reconfig, row_len/sample_dly/filter sweep) and
@@ -25,6 +25,10 @@
 # RS - 2026-10-21 parameters from config file (-c) instead of per-module
 #      script copies; CLI flags still override. -c is now --config (the
 #      channel list moved to --channel-list only)
+# RS - 2026-10-21 acquisition length given as duration in seconds
+#      (normal_duration/fast_duration/superfast_duration, -t/--duration)
+#      instead of sample counts; each sub-script converts it to samples at
+#      the rate in effect, so datasets keep their length across row_lens
 #
 # Usage: noise_taking.sh -c CONFIG [OPTIONS]
 #   -c, --config MODULE          required: module config directory (uses its
@@ -58,34 +62,35 @@
 #   -f, --f-cutoff F               Butterworth filter cutoff frequency in Hz
 #   -r, --row-list FILE           row list file, passed through to fast.sh
 #   --channel-list FILE           channel list file, passed through to superfast.sh
-#   -n, --nsamp N_NORMAL,N_FAST,N_SUPERFAST
-#                                  samples-per-acquisition overrides: first value applies
+#   -t, --duration T_NORMAL,T_FAST,T_SUPERFAST
+#                                  seconds-per-acquisition overrides: first value applies
 #                                  to normal_dm10.sh and normal_dm1.sh (shared), second to
-#                                  fast.sh, third to superfast.sh. Leave a slot blank (e.g.
-#                                  "6800,,4000000") to keep that slot's config value.
+#                                  fast.sh (per row), third to superfast.sh (per channel).
+#                                  Leave a slot blank (e.g. "60,,10") to keep that slot's
+#                                  config value.
 #
 #   List files given on the command line are looked up as given, then in
 #   the config's own list directory (e.g. config/20261020_ba_i4/), so
 #   "--row-list fast_row_list_test.txt" finds the module's test list.
 #
 # Examples:
-#   # Fast only, quick smoke test: single bias, single row_len, small nsamp,
+#   # Fast only, quick smoke test: single bias, single row_len, short duration,
 #   # small row list. Only the "fast" slot is set (middle of the 3).
 #   ./noise_taking.sh -c 20261020_ba_i4 --type f --tes-bias-list tes_bias_list_test.txt \
-#       --rowlens 119 --row-list fast_row_list_test.txt --nsamp ,1000, --overwrite
+#       --rowlens 119 --row-list fast_row_list_test.txt --duration ,0.1, --overwrite
 #
 #   # Normal only, DM10 + DM1 together, quick smoke test.
 #   ./noise_taking.sh -c 20261020_ba_i4 --type n10,n1 --tes-bias-list tes_bias_list_test.txt \
-#       --rowlens 119 --nsamp 100 --overwrite
+#       --rowlens 119 --duration 1 --overwrite
 #
-#   # Superfast only, quick smoke test: small channel list, reduced nsamp.
+#   # Superfast only, quick smoke test: small channel list, short duration.
 #   ./noise_taking.sh -c 20261020_ba_i4 --type s --tes-bias-list tes_bias_list_test.txt \
-#       --channel-list superfast_channel_list_test.txt --nsamp ,,40000 --overwrite
+#       --channel-list superfast_channel_list_test.txt --duration ,,0.1 --overwrite
 #
 #   # All four types together, quick smoke test at a single bias.
 #   ./noise_taking.sh -c 20261020_ba_i4 --type n10,n1,f,s --tes-bias-list tes_bias_list_test.txt \
 #       --rowlens 119 --row-list fast_row_list_test.txt \
-#       --channel-list superfast_channel_list_test.txt --nsamp 100,1000,40000 --overwrite
+#       --channel-list superfast_channel_list_test.txt --duration 1,0.1,0.1 --overwrite
 #
 #   # Production run: everything as in the config.
 #   ./noise_taking.sh -c 20261020_ba_i4 --run 1
@@ -109,8 +114,8 @@ MCE_TOOLS="${MCE_TOOLS:-$(dirname "$SCRIPT_DIR")}"
 # remaining flags on top so they override config values
 ####################################################################
 
-opts=$(getopt -o c:R:C:b:l:f:r:n:p: \
-    --long config:,type:,run:,overwrite,configprefix:,max-rows:,tes-bias-list:,unlatch-bias:,unlatch-pause:,bias-pause:,rowlens:,f-cutoff:,row-list:,channel-list:,nsamp: \
+opts=$(getopt -o c:R:C:b:l:f:r:t:p: \
+    --long config:,type:,run:,overwrite,configprefix:,max-rows:,tes-bias-list:,unlatch-bias:,unlatch-pause:,bias-pause:,rowlens:,f-cutoff:,row-list:,channel-list:,duration: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -157,9 +162,9 @@ unlatch_pause=2
 bias_pause=30
 rowlens=89
 f_cutoff=75
-nsamp_normal=2300
-nsamp_fast=204000
-nsamp_superfast=4000000
+normal_duration=10
+fast_duration=10
+superfast_duration=10
 superfast_row_len=62
 superfast_ccnumrows=41
 superfast_period=50
@@ -187,7 +192,7 @@ resolve_list() {
 
 run="0"
 overwrite="false"
-nsamp=""
+duration=""
 
 set -- "${args[@]}"
 while true; do
@@ -206,7 +211,7 @@ while true; do
         -f|--f-cutoff)        f_cutoff="$2"; shift 2 ;;
         -r|--row-list)        row_list=$(resolve_list "$2"); shift 2 ;;
         --channel-list)       channel_list=$(resolve_list "$2"); shift 2 ;;
-        -n|--nsamp)           nsamp="$2"; shift 2 ;;
+        -t|--duration)        duration="$2"; shift 2 ;;
         --)                   shift; break ;;
         *)                    echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -240,15 +245,15 @@ do_f=false; has_type f && do_f=true
 do_s=false; has_type s && do_s=true
 
 ####################################################################
-# split --nsamp into per-type overrides: normal (n10+n1), fast, superfast.
-# A blank slot (e.g. "6800,,4000000") keeps that slot's config value.
+# split --duration into per-type overrides: normal (n10+n1), fast, superfast.
+# A blank slot (e.g. "60,,10") keeps that slot's config value.
 ####################################################################
 
-if [ -n "$nsamp" ]; then
-    IFS=',' read -ra nsamp_arr <<< "$nsamp,,"
-    [ -n "${nsamp_arr[0]}" ] && nsamp_normal="${nsamp_arr[0]}"
-    [ -n "${nsamp_arr[1]}" ] && nsamp_fast="${nsamp_arr[1]}"
-    [ -n "${nsamp_arr[2]}" ] && nsamp_superfast="${nsamp_arr[2]}"
+if [ -n "$duration" ]; then
+    IFS=',' read -ra duration_arr <<< "$duration,,"
+    [ -n "${duration_arr[0]}" ] && normal_duration="${duration_arr[0]}"
+    [ -n "${duration_arr[1]}" ] && fast_duration="${duration_arr[1]}"
+    [ -n "${duration_arr[2]}" ] && superfast_duration="${duration_arr[2]}"
 fi
 
 if [ ! -f "$tes_bias_list" ]; then
@@ -430,17 +435,17 @@ do
     for rlen in "${rlen_arr[@]}"; do
         if $do_n10; then
             reconfig_for_rowlen $rlen
-            "$SCRIPT_DIR/normal_dm10.sh" --dir "$biasdir" --rowlen "$rlen" --nsamp "$nsamp_normal"
+            "$SCRIPT_DIR/normal_dm10.sh" --dir "$biasdir" --rowlen "$rlen" --duration "$normal_duration"
         fi
 
         if $do_n1; then
             reconfig_for_rowlen $rlen
-            "$SCRIPT_DIR/normal_dm1.sh" --dir "$biasdir" --rowlen "$rlen" --nsamp "$nsamp_normal"
+            "$SCRIPT_DIR/normal_dm1.sh" --dir "$biasdir" --rowlen "$rlen" --duration "$normal_duration"
         fi
 
         if $do_f; then
             reconfig_for_rowlen $rlen
-            "$SCRIPT_DIR/fast.sh" --dir "$biasdir" --rowlen "$rlen" --row-list "$row_list" --nsamp "$nsamp_fast"
+            "$SCRIPT_DIR/fast.sh" --dir "$biasdir" --rowlen "$rlen" --row-list "$row_list" --duration "$fast_duration"
         fi
     done
 
@@ -449,7 +454,7 @@ do
         mce_reconfig
         sleep 1
         "$SCRIPT_DIR/superfast.sh" --dir "$biasdir" --channel-list "$channel_list" \
-            --nsamp "$nsamp_superfast" --row-len "$superfast_row_len" \
+            --duration "$superfast_duration" --row-len "$superfast_row_len" \
             --ccnumrows "$superfast_ccnumrows" --period "$superfast_period" \
             --stepsize "$superfast_stepsize" --ac2-cs "$superfast_ac2_cs"
     fi

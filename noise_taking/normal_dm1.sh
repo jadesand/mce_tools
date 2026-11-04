@@ -11,6 +11,9 @@
 #      (noise_taking_ba_i6.sh), since normal_dm10/normal_dm1/fast all sweep
 #      the same row_len list and setting it three times per row_len was
 #      redundant
+# RS - 2026-10-21 --duration (seconds) instead of --nsamp; the sample count is
+#      computed from num_rows/row_len/data_rate read off the MCE, so a
+#      dataset lasts the same time at every row_len
 #
 # Usage: normal_dm1.sh [OPTIONS]
 #   -d, --dir DIR         output directory to write into, relative to $MAS_DATA;
@@ -22,7 +25,8 @@
 #                            existing normal_dm1_run<RUN> directory
 #   -l, --rowlen ROWLEN     row_len currently in effect on the MCE, used only
 #                            to label the output filename (default: 89)
-#   -n, --nsamp N           number of samples to acquire (default: 2300)
+#   -t, --duration SEC      seconds of data to acquire (default: 10); converted
+#                            to samples at fs=50e6/(num_rows*row_len*data_rate)
 
 source $MAS_SCRIPT/mas_library.bash
 
@@ -39,10 +43,10 @@ dir=""
 run="0"
 overwrite="false"
 rowlen=89
-nsamp=2300
+duration=10
 
-opts=$(getopt -o d:R:l:n: \
-    --long dir:,run:,overwrite,rowlen:,nsamp: \
+opts=$(getopt -o d:R:l:t: \
+    --long dir:,run:,overwrite,rowlen:,duration: \
     -n "$SCRIPT_NAME" -- "$@")
 if [ $? -ne 0 ]; then echo "Error parsing options"; exit 1; fi
 eval set -- "$opts"
@@ -53,7 +57,7 @@ while true; do
         -R|--run)       run="$2"; shift 2 ;;
         --overwrite)    overwrite="true"; shift ;;
         -l|--rowlen)    rowlen="$2"; shift 2 ;;
-        -n|--nsamp)     nsamp="$2"; shift 2 ;;
+        -t|--duration)  duration="$2"; shift 2 ;;
         --)             shift; break ;;
         *)              echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -104,9 +108,21 @@ sleep 1
 mce_cmd -qx wb rca data_mode 1
 sleep 1
 
+# convert duration to a sample count at the rate currently on the MCE
+num_rows=$(command_reply rb sys num_rows | awk '{print $1}')  # one value per card; take the first
+mce_rowlen=$(command_reply rb sys row_len | awk '{print $1}')
+data_rate=$(command_reply rb cc data_rate)
+read fs nsamp <<< $(awk -v t="$duration" -v n="$num_rows" -v r="$mce_rowlen" -v dr="$data_rate" \
+    'BEGIN { fs = 50e6/(n*r*dr); printf "%.2f %d\n", fs, t*fs + 0.5 }')
+if [ -z "$nsamp" ] || [ "$nsamp" -lt 1 ]; then
+    echo "Error: could not compute nsamp (num_rows=$num_rows row_len=$mce_rowlen data_rate=$data_rate)" >&2
+    exit 1
+fi
+echo "duration=${duration}s at fs=${fs} Hz (num_rows=$num_rows, row_len=$mce_rowlen, data_rate=$data_rate) -> nsamp=$nsamp"
+
 echo "taking normal, data_mode 1, noise for all channels, row_len=$rowlen"
 
-mce_run $dir'/all_rcs_datamode1_rowlen'$rowlen $nsamp s # this corresponds to t= #samples/fs (sec)
+mce_run $dir'/all_rcs_datamode1_rowlen'$rowlen $nsamp s # t = nsamp/fs = duration
 
 sleep 1
 
