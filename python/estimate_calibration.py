@@ -23,16 +23,12 @@ STAGE_VARNAME = {
 }
 
 # MUX_INDUCTANCE_pH = {
-#     '11':{
+#     'BA3':{
 #         'sq1_ramp': 683.3,  # M_SQ1IN in pH
 #         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
 #     },
-#     '21':{
-#         'sq1_ramp': 683.3,  # M_SQ1IN in pH
-#         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
-#     },
-#     '23':{
-#         'sq1_ramp': 683.3,  # M_SQ1IN in pH
+#     'NIST':{
+#         'sq1_ramp': 1260,  # M_SQ1IN in pH
 #         'sq1_ramp_tes': 29.0  # M_SQ1FB in pH
 #     },
 # }
