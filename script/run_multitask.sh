@@ -38,12 +38,17 @@ fi
 # run_mce_raw_acq_two_level.sh's "most recently modified dir" search.
 mkdir -p "$RUN_DIR/analysis"
 
-main() {
-    # Snapshot existing top-level dirs so we only collect what this run creates
-    before_data=$(find "$MAS_DATA_REAL" -maxdepth 1 -type d -not -path "$MAS_DATA_REAL")
-    before_analysis=$(find "$MAS_DATA_REAL/analysis" -maxdepth 1 -type d -not -path "$MAS_DATA_REAL/analysis" 2>/dev/null)
+# Log everything to $RUN_DIR/log. tee is started with SIGINT ignored so it
+# survives Ctrl+C and still captures the collection output below.
+trap '' INT
+exec > >(tee "$RUN_DIR/log") 2>&1
 
-    (cd "$SCRIPT_DIR" && bash "$TASK_FILE")
+# Snapshot existing top-level dirs so we only collect what this run creates
+before_data=$(find "$MAS_DATA_REAL" -maxdepth 1 -type d -not -path "$MAS_DATA_REAL")
+before_analysis=$(find "$MAS_DATA_REAL/analysis" -maxdepth 1 -type d -not -path "$MAS_DATA_REAL/analysis" 2>/dev/null)
+
+collect() {
+    trap '' INT TERM HUP  # don't let a second Ctrl+C interrupt the collection
 
     # Move newly created top-level dirs into the run directory
     while IFS= read -r dir; do
@@ -65,6 +70,14 @@ main() {
     cp "$TASK_FILE" "$RUN_DIR/multitask.sh"
 
     echo "Run artifacts collected in $RUN_DIR"
+    sleep 0.2  # let tee flush
 }
 
-main 2>&1 | tee "$RUN_DIR/log"
+# Collect on any exit path (normal, Ctrl+C, kill). INT/TERM/HUP just exit,
+# which fires the EXIT trap.
+trap collect EXIT
+trap 'echo "Interrupted, collecting data..."; exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+(cd "$SCRIPT_DIR" && bash "$TASK_FILE")
