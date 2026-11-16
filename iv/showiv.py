@@ -198,6 +198,13 @@ def main():
     print nc
     print nr
 
+    if nt != len(bias):
+        # ramp cut short (e.g. frame data timed out): plot only the steps taken
+        n = min(nt, len(bias))
+        print 'warning: %d frames but %d bias steps; truncating to %d' % (nt, len(bias), n)
+        bias = bias[:n]
+        y = y[:, :, :n]
+
     cmap = plt.get_cmap('inferno')
 
     def get_trace(row, col):
