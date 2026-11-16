@@ -29,6 +29,8 @@
 #      (normal_duration/fast_duration/superfast_duration, -t/--duration)
 #      instead of sample counts; each sub-script converts it to samples at
 #      the rate in effect, so datasets keep their length across row_lens
+# RS - 2026-11-12 tes_bias list may instead be a per-column bias matrix
+#      (one line of n_bias_lines values per step) for dichroic modules
 #
 # Usage: noise_taking.sh -c CONFIG [OPTIONS]
 #   -c, --config MODULE          required: module config directory (uses its
@@ -52,7 +54,9 @@
 #   -C, --configprefix PFX       MCE config file prefix in $MAS_DATA
 #   --max-rows N                   total number of rows
 #   -b, --tes-bias-list FILE     tes_bias sweep (line 1) and fixed bias columns
-#                                  (line 2)
+#                                  (line 2); or a per-column bias matrix, one
+#                                  line of n_bias_lines values per bias step
+#                                  (see "read the tes_bias list" below)
 #   --unlatch-bias BIAS          tes_bias value to unlatch at the start
 #   --unlatch-pause SECONDS      pause after unlatching
 #   -p, --bias-pause SECONDS     pause after each bias step
@@ -327,50 +331,115 @@ fi
 cp "${configs[0]}" "$MAS_DATA/$dir/"
 
 ####################################################################
-# read tes_bias sweep (first data line) and fixed bias columns (second
-# data line), skipping comment (#) and blank lines
+# read the tes_bias list, skipping comment (#) and blank lines. Two formats:
+#
+#   sweep + columns: line 1 is the tes_bias sweep, line 2 the fixed columns
+#     to bias (all entries < 32). Every step applies one value to those
+#     columns. Per-step output dir: bias<tes_bias>.
+#   per-column matrix: every line is one bias step giving the tes_bias for
+#     every bias line (exactly n_bias_lines values), e.g. for dichroic
+#     modules needing different biases on different columns. Detected when
+#     line 2 has any entry >= 32, or there are more than 2 data lines.
+#     Per-step output dir: bias_step<NN>, with that step's bias vector
+#     saved to tes_bias.txt inside it.
+#
+# Either way this builds step_names (output subdir per step) and step_args
+# (the full n_bias_lines bias_tess vector per step).
 ####################################################################
 
-tes_bias_data=$(grep -v '^\s*#' "$tes_bias_list" | grep -v '^\s*$')
-tes_bias_values=$(echo "$tes_bias_data" | sed -n '1p')
-bias_col_list=$(echo "$tes_bias_data" | sed -n '2p')
+mapfile -t tes_bias_lines < <(grep -v '^\s*#' "$tes_bias_list" | grep -v '^\s*$')
 
-# number of tes bias lines: from the config if set, otherwise read from the
-# MCE (same way bias_tess does). bias_tess requires exactly this many values.
+# number of tes bias lines: from the config if set, otherwise counted from
+# the "<RB tes bias> v0 v1 ..." line of mce_status -s (that line reads
+# "<RB tes bias> ERROR" if the read fails). bias_tess requires exactly this
+# many values.
 if [ -z "$n_bias_lines" ]; then
-    n_bias_lines=$(command_reply rb tes bias | wc -w)
-    if [ "$n_bias_lines" -lt 1 ]; then
-        echo "Error: could not read tes bias line count from MCE"
+    tes_bias_readback=$(mce_status -s | grep '^<RB tes bias>' | sed 's/^<RB tes bias>//')
+    n_bias_lines=$(echo $tes_bias_readback | wc -w)
+    if [ "$n_bias_lines" -lt 1 ] || [[ "$tes_bias_readback" == *ERROR* ]]; then
+        echo "Error: could not read tes bias line count from MCE (mce_status -s: '<RB tes bias>$tes_bias_readback')"
         exit 1
     fi
 fi
 
-declare -A bias_col_set=()
-for col in $bias_col_list; do
-    if [ "$col" -lt 0 ] || [ "$col" -ge $n_bias_lines ]; then
-        echo "Error: bias column $col in $tes_bias_list is outside 0-$((n_bias_lines-1))"
-        exit 1
-    fi
-    bias_col_set[$col]=1
-done
-
-# bias_tess at the given tes_bias, on the fixed columns in bias_col_set,
-# then settle for the given number of seconds. Used for both the optional
-# initial unlatch step and each bias step in the sweep below.
-bias_and_settle() {
-    local tbias=$1 pause=$2
-    local bias_args="" i
-    for ((i=0; i<n_bias_lines; i++)); do
-        if [ -n "${bias_col_set[$i]}" ]; then
-            bias_args="$bias_args $tbias"
-        else
-            bias_args="$bias_args 0"
+if [ "${#tes_bias_lines[@]}" -lt 2 ]; then
+    echo "Error: $tes_bias_list needs at least 2 data lines (sweep + columns, or a per-column bias matrix)"
+    exit 1
+fi
+for line in "${tes_bias_lines[@]}"; do
+    for v in $line; do
+        if ! [[ "$v" =~ ^[0-9]+$ ]]; then
+            echo "Error: non-integer entry '$v' in $tes_bias_list"
+            exit 1
         fi
     done
+done
+
+bias_matrix=false
+[ "${#tes_bias_lines[@]}" -gt 2 ] && bias_matrix=true
+for v in ${tes_bias_lines[1]}; do
+    [ "$v" -ge 32 ] && bias_matrix=true
+done
+
+step_names=()
+step_args=()
+# columns biased at any step; the optional unlatch step biases these
+declare -A bias_col_set=()
+
+# full bias vector with the given tes_bias on the columns in bias_col_set
+bias_vector() {
+    local tbias=$1 vec=() i
+    for ((i=0; i<n_bias_lines; i++)); do
+        if [ -n "${bias_col_set[$i]}" ]; then
+            vec+=("$tbias")
+        else
+            vec+=(0)
+        fi
+    done
+    echo "${vec[*]}"
+}
+
+if $bias_matrix; then
+    echo "tes_bias list: per-column matrix, ${#tes_bias_lines[@]} steps"
+    for ((s=0; s<${#tes_bias_lines[@]}; s++)); do
+        read -ra row <<< "${tes_bias_lines[$s]}"
+        if [ "${#row[@]}" -ne "$n_bias_lines" ]; then
+            echo "Error: line $((s+1)) of the bias matrix in $tes_bias_list has ${#row[@]} values, expected n_bias_lines=$n_bias_lines"
+            exit 1
+        fi
+        for ((i=0; i<n_bias_lines; i++)); do
+            [ "${row[$i]}" -ne 0 ] && bias_col_set[$i]=1
+        done
+        step_names+=("$(printf 'bias_step%02d' $s)")
+        step_args+=("${row[*]}")
+    done
+else
+    for col in ${tes_bias_lines[1]}; do
+        if [ "$col" -ge $n_bias_lines ]; then
+            echo "Error: bias column $col in $tes_bias_list is outside 0-$((n_bias_lines-1))"
+            exit 1
+        fi
+        if [ -n "${bias_col_set[$col]}" ]; then
+            echo "Error: bias column $col listed twice in $tes_bias_list"
+            exit 1
+        fi
+        bias_col_set[$col]=1
+    done
+    for tbias in ${tes_bias_lines[0]}; do
+        step_names+=("bias$tbias")
+        step_args+=("$(bias_vector $tbias)")
+    done
+fi
+
+# bias_tess with the given full bias vector (n_bias_lines values, as one
+# string), then settle for the given number of seconds. Used for both the
+# optional initial unlatch step and each bias step in the sweep below.
+bias_and_settle() {
+    local bias_args=$1 pause=$2
     echo "bias_args=($bias_args)"
     bias_tess $bias_args
     if [ $? -ne 0 ]; then
-        echo "Error: bias_tess failed at tes_bias=$tbias -- aborting" >&2
+        echo "Error: bias_tess failed at bias_args=($bias_args) -- aborting" >&2
         exit 1
     fi
     sleep $pause
@@ -417,17 +486,18 @@ IFS=',' read -ra rlen_arr <<< "$rowlens"
 
 if [ -n "$unlatch_bias" ]; then
     echo "unlatching at tes_bias=$unlatch_bias for ${unlatch_pause}s"
-    bias_and_settle $unlatch_bias $unlatch_pause
+    bias_and_settle "$(bias_vector $unlatch_bias)" $unlatch_pause
 fi
 
-for tbias in $tes_bias_values
+for ((s=0; s<${#step_names[@]}; s++))
 do
-    echo "tes_bias="$tbias
-    biasdir=$dir'/bias'$tbias
+    echo "bias step $s: ${step_names[$s]}"
+    biasdir=$dir'/'${step_names[$s]}
     mkdir -p "$MAS_DATA/$biasdir"
+    $bias_matrix && echo "${step_args[$s]}" > "$MAS_DATA/$biasdir/tes_bias.txt"
 
     echo "bias and settle for ${bias_pause}s"
-    bias_and_settle $tbias $bias_pause
+    bias_and_settle "${step_args[$s]}" $bias_pause
 
     # normal_dm10 (n10), normal_dm1 (n1), and fast (f) sweep row_len;
     # superfast (s) uses its own fixed row_len, so it runs once per bias,
